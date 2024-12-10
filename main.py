@@ -170,7 +170,7 @@ if __name__ == "__main__":
 
     # تنظیم وب‌هوک
     bot.remove_webhook()
-    bot.set_webhook(url='telebot-production-526c.up.railway.app/' + TOKEN)
+    bot.set_webhook(url='telebot-production.railway.app/' + TOKEN)
 
     # اجرای سرور فلسک
     app.run(host='0.0.0.0', port=8080)
