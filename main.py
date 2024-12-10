@@ -10,6 +10,7 @@ import requests
 import pandas as pd
 
 load_dotenv()
+
 # تنظیمات اساسی
 TOKEN = os.environ.get('TOKEN')  # توکن ربات تلگرام
 ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID')  # آیدی چت ادمین
@@ -18,7 +19,6 @@ if not TOKEN:
     raise ValueError("TOKEN is not set correctly")  # اگر TOKEN خالی است، خطا می‌دهد
 
 print("Token loaded:", TOKEN)  # برای بررسی مقدار TOKEN
-
 
 # ساخت اپلیکیشن فلسک برای نگه داشتن ربات در حالت آنلاین در ریپلیت
 app = Flask(__name__)
@@ -125,20 +125,23 @@ def get_consumer_key(message, url):
 def get_consumer_secret(message, url, consumer_key):
     consumer_secret = message.text
     save_wordpress_info(url, consumer_key, consumer_secret)
-    bot.reply_to(message, "اطلاعات سایت شما با موفقیت ذخیره شد. حالا می‌توانید از ربات استفاده کنید.")
+    
+    # ارسال پیام به کاربر برای نشان دادن دکمه "دریافت لیست محصولات"
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row('دریافت لیست محصولات')
+    markup.row('منوی اصلی')  # دکمه منوی اصلی
+    bot.reply_to(message, "اطلاعات سایت شما با موفقیت ذخیره شد. حالا می‌توانید لیست محصولات را دریافت کنید.", reply_markup=markup)
 
 # دستور شروع
 @bot.message_handler(commands=['start'])
 def start_command(message):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     contact_button = telebot.types.KeyboardButton('اشتراک‌گذاری شماره تلفن', request_contact=True)
-    connect_button = telebot.types.KeyboardButton('اتصال به سایت')
     markup.add(contact_button, connect_button)
 
     bot.reply_to(message, 
         f"سلام {message.from_user.first_name}! به ربات ما خوش آمدید.\n"
         "لطفاً شماره تماس خود را با زدن دکمه اشتراک‌گذاری شماره ارسال کنید.\n"
-        "یا می‌توانید با زدن دکمه 'اتصال به سایت' سایت خود را به ربات متصل کنید.", 
         reply_markup=markup
     )
 
