@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 from flask import Flask, request
 from telebot import TeleBot
+import telebot
 import sqlite3
 from datetime import datetime
 import uuid
