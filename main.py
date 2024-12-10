@@ -5,7 +5,6 @@ import telebot
 import sqlite3
 from datetime import datetime
 import uuid
-import pandas as pd
 
 load_dotenv()
 TOKEN = os.environ.get('TOKEN')  # توکن ربات تلگرام
@@ -57,49 +56,49 @@ def start_command(message):
 
     if user:
         markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-        markup.row('تست پنج روزه رایگان', 'خرید اشتراک')
-        markup.row('سوالات متداول', 'ارتباط با پشتیبانی', 'نمایش لیست مشتری‌ها')
+        markup.row('🆓 تست پنج روزه رایگان', '💳 خرید اشتراک')
+        markup.row('❓ سوالات متداول', '📞 ارتباط با پشتیبانی')
         bot.reply_to(message, 'منوی اصلی:', reply_markup=markup)
     else:
-        markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-        contact_button = telebot.types.KeyboardButton('اشتراک‌گذاری شماره تلفن', request_contact=True)
-        markup.add(contact_button)
-        bot.reply_to(message, f"سلام {message.from_user.first_name}! به ربات ما خوش آمدید.\n"
-                              "لطفاً شماره تماس خود را با زدن دکمه اشتراک‌گذاری شماره ارسال کنید.",
-                      reply_markup=markup)
+        bot.reply_to(message, "سلام! لطفاً نام و نام خانوادگی خود را وارد کنید.")
+        bot.register_next_step_handler(message, handle_name)
 
-@bot.message_handler(content_types=['contact'])
-def handle_contact(message):
-    contact = message.contact
+def handle_name(message):
     chat_id = message.chat.id
+    user_name = message.text
+    bot.reply_to(message, "لطفاً شماره تلفن خود را وارد کنید.")
+    bot.register_next_step_handler(message, handle_phone, user_name)
 
+def handle_phone(message, user_name):
+    chat_id = message.chat.id
+    phone_number = message.text
+
+    first_name, last_name = user_name.split(" ", 1)  # فرض بر این است که نام و نام خانوادگی با یک فاصله وارد شده‌اند
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
     cursor.execute('''
         INSERT OR REPLACE INTO users 
         (chat_id, first_name, last_name, phone_number, registered_at)
         VALUES (?, ?, ?, ?, ?)
-    ''', (chat_id, contact.first_name, contact.last_name, contact.phone_number, datetime.now()))
+    ''', (chat_id, first_name, last_name, phone_number, datetime.now()))
     conn.commit()
     conn.close()
 
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row('تست پنج روزه رایگان', 'خرید اشتراک')
-    markup.row('سوالات متداول', 'ارتباط با پشتیبانی', 'نمایش لیست مشتری‌ها')
+    markup.row('🆓 تست پنج روزه رایگان', '💳 خرید اشتراک')
+    markup.row('❓ سوالات متداول', '📞 ارتباط با پشتیبانی')
     bot.reply_to(message, 'منوی اصلی:', reply_markup=markup)
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
-    if message.text == 'تست پنج روزه رایگان':
+    if message.text == '🆓 تست پنج روزه رایگان':
         handle_free_trial(message)
-    elif message.text == 'خرید اشتراک':
+    elif message.text == '💳 خرید اشتراک':
         handle_subscription(message)
-    elif message.text == 'سوالات متداول':
+    elif message.text == '❓ سوالات متداول':
         handle_faq(message)
-    elif message.text == 'ارتباط با پشتیبانی':
+    elif message.text == '📞 ارتباط با پشتیبانی':
         handle_support(message)
-    elif message.text == 'نمایش لیست مشتری‌ها':
-        send_users_list(message)
 
 def handle_free_trial(message):
     unique_id = str(uuid.uuid4())
@@ -108,8 +107,9 @@ def handle_free_trial(message):
 
 def handle_subscription(message):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row('اشتراک یک ماهه', 'اشتراک دو ماهه')
-    markup.row('اشتراک سه ماهه', 'اشتراک شش ماهه')
+    markup.row('📝 اشتراک یک ماهه', '📝 اشتراک دو ماهه')
+    markup.row('📝 اشتراک سه ماهه', '📝 اشتراک شش ماهه')
+    markup.row('🔙 منوی اصلی')
     bot.reply_to(message, 'لطفاً نوع اشتراک مورد نظر را انتخاب کنید:', reply_markup=markup)
 
 def handle_faq(message):
@@ -137,26 +137,12 @@ def handle_support(message):
 """
     bot.reply_to(message, support_text)
 
-def send_users_list(message):
-    if message.chat.id != int(ADMIN_CHAT_ID):
-        bot.reply_to(message, "این دستور فقط برای ادمین قابل دسترسی است.")
-        return
-
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT first_name, last_name, phone_number, registered_at FROM users")
-    users = cursor.fetchall()
-    conn.close()
-
-    # ساخت DataFrame از کاربران
-    df = pd.DataFrame(users, columns=["First Name", "Last Name", "Phone Number", "Registered At"])
-
-    # ذخیره فایل اکسل
-    file_path = '/tmp/users_list.xlsx'
-    df.to_excel(file_path, index=False)
-
-    # ارسال فایل به ادمین
-    bot.send_document(ADMIN_CHAT_ID, open(file_path, 'rb'))
+@bot.message_handler(func=lambda message: message.text == '🔙 منوی اصلی')
+def go_to_main_menu(message):
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row('🆓 تست پنج روزه رایگان', '💳 خرید اشتراک')
+    markup.row('❓ سوالات متداول', '📞 ارتباط با پشتیبانی')
+    bot.reply_to(message, 'منوی اصلی:', reply_markup=markup)
 
 @app.route('/' + TOKEN, methods=['POST'])
 def webhook():
