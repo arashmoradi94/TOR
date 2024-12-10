@@ -172,5 +172,5 @@ def home():
 if __name__ == "__main__":
     init_db()
     bot.remove_webhook()
-    bot.set_webhook(url='tor-production.up.railway.app/.com/' + TOKEN)
+    bot.set_webhook(url='tor-production.up.railway.app/' + TOKEN)
     app.run(host='0.0.0.0', port=8080)
