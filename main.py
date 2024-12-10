@@ -2,7 +2,6 @@ import os
 from dotenv import load_dotenv
 from flask import Flask, request
 from telebot import TeleBot
-import telebot
 import sqlite3
 from datetime import datetime
 import uuid
@@ -10,6 +9,7 @@ import requests
 import pandas as pd
 
 load_dotenv()
+
 # تنظیمات اساسی
 TOKEN = os.environ.get('TOKEN')  # توکن ربات تلگرام
 ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID')  # آیدی چت ادمین
@@ -40,7 +40,8 @@ def init_db():
             phone_number TEXT,
             registered_at DATETIME,
             api_url TEXT,
-            api_key TEXT
+            consumer_key TEXT,
+            consumer_secret TEXT
         )
     ''')
 
@@ -96,100 +97,66 @@ def handle_contact(message):
 
     bot.reply_to(message, 'منوی اصلی:', reply_markup=markup)
 
-# هندل کردن پیام‌های متنی
-@bot.message_handler(func=lambda message: True)
-def handle_message(message):
-    if message.text == 'تست پنج روزه رایگان':
-        handle_free_trial(message)
-    elif message.text == 'خرید اشتراک':
-        handle_subscription(message)
-    elif message.text == 'سوالات متداول':
-        handle_faq(message)
-    elif message.text == 'ارتباط با پشتیبانی':
-        handle_support(message)
-    elif message.text == 'اتصال به سایت':
-        handle_connect_to_site(message)
-
-# مدیریت تست رایگان
-def handle_free_trial(message):
-    unique_id = str(uuid.uuid4())
-    bot.reply_to(message, f'کد یکتای شما: {unique_id}')
-
-    # ارسال به ادمین
-    bot.send_message(
-        chat_id=ADMIN_CHAT_ID, 
-        text=f'درخواست تست رایگان از کاربر {message.from_user.id}\nکد یکتا: {unique_id}'
-    )
-
-# مدیریت اشتراک‌ها
-def handle_subscription(message):
-    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row('اشتراک یک ماهه', 'اشتراک دو ماهه')
-    markup.row('اشتراک سه ماهه', 'اشتراک شش ماهه')
-    markup.row('منوی اصلی')
-
-    bot.reply_to(message, 'لطفاً نوع اشتراک مورد نظر را انتخاب کنید:', reply_markup=markup)
-
-# مدیریت سوالات متداول
-def handle_faq(message):
-    faq_text = """
-سوالات متداول:
-
-1. نحوه استفاده از ربات
-2. شرایط اشتراک رایگان
-3. نحوه خرید اشتراک
-4. پشتیبانی و راهنمایی
-
-برای اطلاعات بیشتر با پشتیبانی تماس بگیرید.
-"""
-    bot.reply_to(message, faq_text)
-
-# مدیریت ارتباط با پشتیبانی
-def handle_support(message):
-    support_text = """
-راه‌های ارتباط با پشتیبانی:
-
-ایمیل: support@example.com
-تلفن: 02112345678
-واتساپ: 09123456789
-
-ساعات پاسخگویی: شنبه تا چهارشنبه 9 صبح تا 5 بعد از ظهر
-"""
-    bot.reply_to(message, support_text)
-
 # مدیریت اتصال به سایت
 def handle_connect_to_site(message):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("منوی اصلی")
 
-    # درخواست اطلاعات API از کاربر
-    bot.reply_to(message, "لطفاً آدرس سایت خود و توکن API را وارد کنید به شکل زیر:\n"
-                           "آدرس سایت: https://yoursite.com\n"
-                           "توکن API: your_api_token", reply_markup=markup)
+    # درخواست آدرس سایت از کاربر
+    bot.reply_to(message, "لطفاً آدرس سایت خود را وارد کنید (مثلاً https://yoursite.com):", reply_markup=markup)
+    bot.register_next_step_handler(message, save_api_url)
 
-    # ذخیره‌سازی اطلاعات اتصال در پایگاه داده
-    bot.register_next_step_handler(message, save_site_info)
-
-# ذخیره‌سازی اطلاعات اتصال به سایت
-def save_site_info(message):
+# ذخیره‌سازی آدرس سایت
+def save_api_url(message):
     chat_id = message.chat.id
-    site_info = message.text.split("\n")
+    api_url = message.text.strip()
 
-    if len(site_info) != 2:
-        bot.reply_to(message, "فرمت اطلاعات وارد شده صحیح نیست. لطفاً دوباره تلاش کنید.")
-        return
-
-    api_url = site_info[0].split(":")[1].strip()
-    api_key = site_info[1].split(":")[1].strip()
-
+    # ذخیره آدرس سایت در پایگاه داده
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
     cursor.execute('''
-        UPDATE users SET api_url = ?, api_key = ? WHERE chat_id = ?
-    ''', (api_url, api_key, chat_id))
+        UPDATE users SET api_url = ? WHERE chat_id = ?
+    ''', (api_url, chat_id))
     conn.commit()
     conn.close()
 
+    # درخواست Consumer Key از کاربر
+    bot.reply_to(message, "لطفاً Consumer Key خود را وارد کنید:")
+    bot.register_next_step_handler(message, save_consumer_key)
+
+# ذخیره‌سازی Consumer Key
+def save_consumer_key(message):
+    chat_id = message.chat.id
+    consumer_key = message.text.strip()
+
+    # ذخیره Consumer Key در پایگاه داده
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE users SET consumer_key = ? WHERE chat_id = ?
+    ''', (consumer_key, chat_id))
+    conn.commit()
+    conn.close()
+
+    # درخواست Consumer Secret از کاربر
+    bot.reply_to(message, "لطفاً Consumer Secret خود را وارد کنید:")
+    bot.register_next_step_handler(message, save_consumer_secret)
+
+# ذخیره‌سازی Consumer Secret
+def save_consumer_secret(message):
+    chat_id = message.chat.id
+    consumer_secret = message.text.strip()
+
+    # ذخیره Consumer Secret در پایگاه داده
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE users SET consumer_secret = ? WHERE chat_id = ?
+    ''', (consumer_secret, chat_id))
+    conn.commit()
+    conn.close()
+
+    # اتصال به سایت موفقیت‌آمیز
     bot.reply_to(message, "اتصال به سایت با موفقیت انجام شد.")
 
     # دکمه دریافت لیست محصولات را نمایش می‌دهیم
@@ -207,7 +174,7 @@ def handle_get_products(message):
     # درخواست به API برای دریافت لیست محصولات
     try:
         # ارسال پیام ساعت شنی برای اطلاع از پردازش
-        loading_message = bot.reply_to(message, "⏳")
+        loading_message = bot.reply_to(message, "⏳ در حال دریافت لیست محصولات، لطفاً صبور باشید...")
 
         # دریافت محصولات از سایت
         products = get_products_from_site(message.chat.id)
@@ -245,7 +212,7 @@ def get_products_from_site(chat_id):
     # اطلاعات API برای سایت
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT api_url, api_key FROM users WHERE chat_id = ?', (chat_id,))
+    cursor.execute('SELECT api_url, consumer_key, consumer_secret FROM users WHERE chat_id = ?', (chat_id,))
     user = cursor.fetchone()
     conn.close()
     
@@ -253,14 +220,16 @@ def get_products_from_site(chat_id):
         raise Exception("اطلاعات API یافت نشد.")
     
     api_url = user[0]
-    api_key = user[1]
+    consumer_key = user[1]
+    consumer_secret = user[2]
     
     # ارسال درخواست به API
-    response = requests.get(f"{api_url}/wp-json/wc/v3/products", auth=(api_key, ''))
+    response = requests.get(f"{api_url}/wp-json/wc/v3/products", auth=(consumer_key, consumer_secret))
     if response.status_code == 200:
         return response.json()  # فرض می‌کنیم پاسخ از نوع JSON است
     else:
-        raise Exception("خطا در ارتباط با API سایت.")
+        raise Exception("خطا در ارتباط با API سایت")
+
 
 # روت برای نگه داشتن ربات آنلاین در ریپلیت
 @app.route('/' + TOKEN, methods=['POST'])
