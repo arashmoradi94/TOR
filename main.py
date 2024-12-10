@@ -141,7 +141,7 @@ def start_command(message):
 
     bot.reply_to(message, 
         f"سلام {message.from_user.first_name}! به ربات ما خوش آمدید.\n"
-        "لطفاً شماره تماس خود را با زدن دکمه اشتراک‌گذاری شماره ارسال کنید.\n"
+        "لطفاً شماره تماس خود را با زدن دکمه اشتراک‌گذاری شماره ارسال کنید.\n",
         reply_markup=markup
     )
 
