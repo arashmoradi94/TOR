@@ -99,6 +99,9 @@ def handle_message(message):
         handle_faq(message)
     elif message.text == '📞 ارتباط با پشتیبانی':
         handle_support(message)
+    elif message.text == '🔙 منوی اصلی':
+        go_to_main_menu(message)
+
 
 def handle_free_trial(message):
     unique_id = str(uuid.uuid4())
