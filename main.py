@@ -281,6 +281,6 @@ if __name__ == "__main__":
 
     # تنظیم وب‌هوک
     bot.remove_webhook()
-    bot.set_webhook(url=f'https://{os.environ.get("REPL_SLUG")}.repl.co/{TOKEN}')
+    bot.set_webhook(url='tor-production.up.railway.app/' + TOKEN)
 
     app.run(host="0.0.0.0", port=5000)
