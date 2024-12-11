@@ -1,39 +1,37 @@
 import os
-import sqlite3
-import uuid
-from datetime import datetime, timedelta
-
 from dotenv import load_dotenv
 from flask import Flask, request
+from telebot import TeleBot
 import telebot
+import sqlite3
+from datetime import datetime
+import uuid
 import requests
 import pandas as pd
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# Load environment variables
 load_dotenv()
+# تنظیمات اساسی
+TOKEN = os.environ.get('TOKEN')  # توکن ربات تلگرام
+ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID')  # آیدی چت ادمین
 
-# Configuration
-TOKEN = os.environ.get('TOKEN')
-ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID')
-SUPPORT_EMAIL = "support@example.com"
-SUPPORT_PHONE = "02112345678"
-WHATSAPP = "09123456789"
-
-# Validate token
 if not TOKEN:
-    raise ValueError("Telegram Bot TOKEN is not set correctly")
+    raise ValueError("TOKEN is not set correctly")  # اگر TOKEN خالی است، خطا می‌دهد
 
-# Flask and Telebot setup
+print("Token loaded:", TOKEN)  # برای بررسی مقدار TOKEN
+
+
+# ساخت اپلیکیشن فلسک برای نگه داشتن ربات در حالت آنلاین در ریپلیت
 app = Flask(__name__)
-bot = telebot.TeleBot(TOKEN)
 
-# Enhanced Database Initialization
+# ساخت ربات تلگرام
+bot = TeleBot(TOKEN)
+
+# تنظیمات پایگاه داده
 def init_db():
-    conn = sqlite3.connect('bot_database.db', check_same_thread=False)
+    conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
 
-    # More comprehensive users table
+    # جدول کاربران
     cursor.execute(''' 
         CREATE TABLE IF NOT EXISTS users (
             chat_id INTEGER PRIMARY KEY,
@@ -42,54 +40,45 @@ def init_db():
             phone_number TEXT,
             registered_at DATETIME,
             api_url TEXT,
-            consumer_key TEXT,
-            consumer_secret TEXT,
-            trial_used BOOLEAN DEFAULT 0,
-            trial_start_date DATETIME
+            api_key TEXT
         )
     ''')
 
-    # Enhanced subscriptions table
+    # جدول اشتراک‌ها
     cursor.execute(''' 
         CREATE TABLE IF NOT EXISTS subscriptions (
-            user_id INTEGER PRIMARY KEY,
+            user_id INTEGER,
             subscription_type TEXT,
             start_date DATETIME,
-            end_date DATETIME,
-            is_active BOOLEAN DEFAULT 1
+            end_date DATETIME
         )
     ''')
 
     conn.commit()
     conn.close()
 
-# Enhanced Start Command
+
+# دستور شروع
 @bot.message_handler(commands=['start'])
 def start_command(message):
-    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     contact_button = telebot.types.KeyboardButton('اشتراک‌گذاری شماره تلفن', request_contact=True)
     markup.add(contact_button)
 
-    welcome_text = (
-        f"سلام {message.from_user.first_name}! 👋\n\n"
-        "به ربات مدیریت محصولات خوش آمدید. برای شروع، لطفاً شماره تماس خود را با زدن دکمه اشتراک‌گذاری ارسال کنید. "
-        "این اطلاعات برای احراز هویت و ارتباط با شما استفاده خواهد شد."
+    bot.reply_to(message, 
+        f"سلام {message.from_user.first_name}! به ربات ما خوش آمدید.\n"
+        "لطفاً شماره تماس خود را با زدن دکمه اشتراک‌گذاری شماره ارسال کنید.", 
+        reply_markup=markup
     )
 
-    bot.reply_to(message, welcome_text, reply_markup=markup)
 
-# Contact Handling with More Validation
+# هندل کردن دریافت شماره تماس
 @bot.message_handler(content_types=['contact'])
 def handle_contact(message):
     contact = message.contact
     chat_id = message.chat.id
 
-    # Validate contact belongs to the user
-    if contact.user_id != message.from_user.id:
-        bot.reply_to(message, "❌ لطفاً شماره تلفن خودتان را ارسال کنید.")
-        return
-
-    # Store user information
+    # ذخیره اطلاعات کاربر در پایگاه داده
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
     cursor.execute(''' 
@@ -100,142 +89,196 @@ def handle_contact(message):
     conn.commit()
     conn.close()
 
-    # Enhanced Main Menu
-    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    markup.add(
-        '🆓 تست پنج روزه رایگان',
-        '💳 خرید اشتراک',
-        '❓ سوالات متداول',
-        '📞 ارتباط با پشتیبانی',
-        '🌐 اتصال به سایت'
-    )
+    # منوی اصلی
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row('تست پنج روزه رایگان')
+    markup.row('خرید اشتراک')
+    markup.row('سوالات متداول', 'ارتباط با پشتیبانی')
+    markup.row('اتصال به سایت')
 
     bot.reply_to(message, 'منوی اصلی:', reply_markup=markup)
 
-# Free Trial with More Controls
+
+# هندل کردن پیام‌های متنی
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+    if message.text == 'تست پنج روزه رایگان':
+        handle_free_trial(message)
+    elif message.text == 'خرید اشتراک':
+        handle_subscription(message)
+    elif message.text == 'سوالات متداول':
+        handle_faq(message)
+    elif message.text == 'ارتباط با پشتیبانی':
+        handle_support(message)
+    elif message.text == 'اتصال به سایت':
+        handle_connect_to_site(message)
+
+
+# مدیریت تست رایگان
 def handle_free_trial(message):
-    chat_id = message.chat.id
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    
-    # Check if user has already used free trial
-    cursor.execute('SELECT trial_used FROM users WHERE chat_id = ?', (chat_id,))
-    result = cursor.fetchone()
-    
-    if result and result[0]:
-        bot.reply_to(message, "❌ شما قبلاً از تست رایگان استفاده کرده‌اید.")
-        conn.close()
-        return
-
-    # Generate unique trial code
     unique_id = str(uuid.uuid4())
-    trial_start = datetime.now()
-    
-    # Update user's trial status
-    cursor.execute('''
-        UPDATE users 
-        SET trial_used = 1, trial_start_date = ? 
-        WHERE chat_id = ?
-    ''', (trial_start, chat_id))
-    conn.commit()
-    conn.close()
+    bot.reply_to(message, f'کد یکتای شما: {unique_id}')
 
-    # Send trial details
-    trial_text = (
-        f"🎉 کد یکتای شما: {unique_id}\n"
-        "✅ تست پنج روزه رایگان فعال شد.\n"
-        f"📅 تاریخ شروع: {trial_start.strftime('%Y-%m-%d')}\n"
-        "⏳ مدت اعتبار: 5 روز"
-    )
-    bot.reply_to(message, trial_text, parse_mode='Markdown')
-
-    # Notify admin
+    # ارسال به ادمین
     bot.send_message(
         chat_id=ADMIN_CHAT_ID, 
         text=f'درخواست تست رایگان از کاربر {message.from_user.id}\nکد یکتا: {unique_id}'
     )
 
-# Subscription Management with Inline Buttons
+
+# مدیریت اشتراک‌ها
 def handle_subscription(message):
-    markup = InlineKeyboardMarkup()
-    markup.row(
-        InlineKeyboardButton("🌕 اشتراک یک ماهه", callback_data='sub_1month'),
-        InlineKeyboardButton("🌗 اشتراک دو ماهه", callback_data='sub_2months')
-    )
-    markup.row(
-        InlineKeyboardButton("🌖 اشتراک سه ماهه", callback_data='sub_3months'),
-        InlineKeyboardButton("🌘 اشتراک شش ماهه", callback_data='sub_6months')
-    )
-    markup.row(InlineKeyboardButton("🏠 بازگشت به منوی اصلی", callback_data='main_menu'))
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row('اشتراک یک ماهه', 'اشتراک دو ماهه')
+    markup.row('اشتراک سه ماهه', 'اشتراک شش ماهه')
+    markup.row('منوی اصلی')
 
-    bot.reply_to(
-        message, 
-        "لطفاً نوع اشتراک مورد نظر را انتخاب کنید:", 
-        reply_markup=markup
-    )
+    bot.reply_to(message, 'لطفاً نوع اشتراک مورد نظر را انتخاب کنید:', reply_markup=markup)
 
-# Callback Query Handler for Subscriptions
-@bot.callback_query_handler(func=lambda call: call.data.startswith('sub_'))
-def subscription_callback(call):
-    subscription_type = call.data.split('_')[1]
-    # Add your payment/subscription logic here
-    bot.answer_callback_query(
-        call.id, 
-        text=f"اشتراک {subscription_type} انتخاب شد. لطفاً منتظر راهنمای پرداخت باشید."
-    )
 
-# Enhanced FAQ with Inline Buttons
+# مدیریت سوالات متداول
 def handle_faq(message):
-    markup = InlineKeyboardMarkup()
-    faq_buttons = [
-        InlineKeyboardButton("نحوه استفاده از ربات", callback_data='faq_usage'),
-        InlineKeyboardButton("شرایط اشتراک رایگان", callback_data='faq_trial'),
-        InlineKeyboardButton("نحوه خرید اشتراک", callback_data='faq_purchase'),
-        InlineKeyboardButton("پشتیبانی و راهنمایی", callback_data='faq_support')
-    ]
-    
-    # Add buttons to markup
-    for button in faq_buttons:
-        markup.row(button)
-    
-    bot.reply_to(message, "سوالات متداول را انتخاب کنید:", reply_markup=markup)
+    faq_text = """
+سوالات متداول:
 
-# More robust message handling
-@bot.message_handler(func=lambda message: True)
-def handle_message(message):
-    message_text = message.text
-    handlers = {
-        '🆓 تست پنج روزه رایگان': handle_free_trial,
-        '💳 خرید اشتراک': handle_subscription,
-        '❓ سوالات متداول': handle_faq,
-        '📞 ارتباط با پشتیبانی': handle_support,
-        '🌐 اتصال به سایت': handle_connect_to_site
-    }
-    
-    handler = handlers.get(message_text)
-    if handler:
-        handler(message)
-    else:
-        bot.reply_to(message, "متوجه پیام شما نشدم. لطفاً از منوی اصلی استفاده کنید.")
+1. نحوه استفاده از ربات
+2. شرایط اشتراک رایگان
+3. نحوه خرید اشتراک
+4. پشتیبانی و راهنمایی
 
-# Support Information with Rich Formatting
+برای اطلاعات بیشتر با پشتیبانی تماس بگیرید.
+"""
+    bot.reply_to(message, faq_text)
+
+
+# مدیریت ارتباط با پشتیبانی
 def handle_support(message):
-    support_text = (
-        "🌟 راه‌های ارتباط با پشتیبانی:\n\n"
-        f"📧 ایمیل: {SUPPORT_EMAIL}\n"
-        f"☎️ تلفن: {SUPPORT_PHONE}\n"
-        f"💬 واتساپ: {WHATSAPP}\n\n"
-        "⏰ ساعات پاسخگویی: شنبه تا چهارشنبه 9 صبح تا 5 بعد از ظهر"
-    )
-    
-    markup = InlineKeyboardMarkup()
-    markup.row(
-        InlineKeyboardButton("ارسال ایمیل", url=f"mailto:{SUPPORT_EMAIL}"),
-        InlineKeyboardButton("تماس تلفنی", url=f"tel:{SUPPORT_PHONE}")
-    )
-    
-    bot.reply_to(message, support_text, reply_markup=markup)
+    support_text = """
+راه‌های ارتباط با پشتیبانی:
 
+ایمیل: support@example.com
+تلفن: 02112345678
+واتساپ: 09123456789
+
+ساعات پاسخگویی: شنبه تا چهارشنبه 9 صبح تا 5 بعد از ظهر
+"""
+    bot.reply_to(message, support_text)
+
+
+# مدیریت اتصال به سایت
+def handle_connect_to_site(message):
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("منوی اصلی")
+
+    # درخواست آدرس سایت از کاربر
+    bot.reply_to(message, "لطفاً آدرس سایت خود را وارد کنید (مانند: https://yoursite.com)", reply_markup=markup)
+    bot.register_next_step_handler(message, save_site_url)
+
+
+# ذخیره‌سازی آدرس سایت
+def save_site_url(message):
+    chat_id = message.chat.id
+    api_url = message.text.strip()
+
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute(''' 
+        UPDATE users SET api_url = ? WHERE chat_id = ?
+    ''', (api_url, chat_id))
+    conn.commit()
+    conn.close()
+
+    bot.reply_to(message, "آدرس سایت شما ذخیره شد. حالا توکن API را وارد کنید.")
+    bot.register_next_step_handler(message, save_api_key)
+
+
+# ذخیره‌سازی توکن API
+def save_api_key(message):
+    chat_id = message.chat.id
+    api_key = message.text.strip()
+
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute(''' 
+        UPDATE users SET api_key = ? WHERE chat_id = ?
+    ''', (api_key, chat_id))
+    conn.commit()
+    conn.close()
+
+    bot.reply_to(message, "اتصال به سایت با موفقیت انجام شد.")
+
+    # دکمه دریافت لیست محصولات را نمایش می‌دهیم
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("دریافت لیست محصولات", "منوی اصلی")
+    bot.reply_to(message, "اتصال به سایت انجام شد. اکنون می‌توانید لیست محصولات را دریافت کنید.", reply_markup=markup)
+
+
+# دکمه دریافت لیست محصولات
+@bot.message_handler(func=lambda message: message.text == 'دریافت لیست محصولات')
+def handle_get_products(message):
+    if not is_site_connected(message.chat.id):
+        bot.reply_to(message, "ابتدا باید سایت خود را متصل کنید.")
+        return
+    
+    # درخواست به API برای دریافت لیست محصولات
+    try:
+        # ارسال پیام ساعت شنی برای اطلاع از پردازش
+        loading_message = bot.reply_to(message, "⏳ در حال دریافت لیست محصولات، لطفاً صبور باشید...")
+
+        # دریافت محصولات از سایت
+        products = get_products_from_site(message.chat.id)
+        
+        # ایجاد فایل اکسل
+        df = pd.DataFrame(products, columns=["ID", "Name", "Price"])
+        excel_file_path = "/tmp/products.xlsx"
+        df.to_excel(excel_file_path, index=False)
+        
+        # حذف پیام ساعت شنی پس از آماده شدن اکسل
+        bot.delete_message(message.chat.id, loading_message.message_id)
+
+        # ارسال فایل اکسل به کاربر
+        with open(excel_file_path, 'rb') as file:
+            bot.send_document(message.chat.id, file, caption="لیست محصولات سایت شما")
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        bot.reply_to(message, "خطا در دریافت محصولات. لطفاً دوباره تلاش کنید.")
+
+
+# تابع بررسی اتصال به سایت
+def is_site_connected(chat_id):
+    # بررسی می‌کنیم که آیا کاربر اطلاعات اتصال به سایت را وارد کرده یا نه
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE chat_id = ?', (chat_id,))
+    user = cursor.fetchone()
+    conn.close()
+    
+    # اگر اطلاعات API موجود بود، متصل شده است
+    return user and user[5] is not None  # فرض می‌کنیم ستون 5 مربوط به اطلاعات API است
+
+
+# تابع برای دریافت محصولات از API سایت
+def get_products_from_site(chat_id):
+    # اطلاعات API برای سایت
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT api_url, api_key FROM users WHERE chat_id = ?', (chat_id,))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if user is None:
+        raise Exception("اطلاعات API یافت نشد.")
+    
+    api_url = user[0]
+    api_key = user[1]
+    
+    # ارسال درخواست به API
+    response = requests.get(f"{api_url}/wp-json/wc/v3/products", auth=(api_key, ''))
+    if response.status_code == 200:
+        return response.json()  # فرض می‌کنیم پاسخ از نوع JSON است
+    else:
+        raise Exception("خطا در ارتباط با API سایت.")
 
 
 # روت برای نگه داشتن ربات آنلاین در ریپلیت
