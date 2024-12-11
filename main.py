@@ -154,7 +154,7 @@ def test_api_connection(chat_id):
     api_url, customer_key, secret_key = user
 
     try:
-        response = requests.get(f"{api_url}/wp-json/wc/v3/products", auth=(customer_key, secret_key))
+        response = requests.get(f"{api_url}/wp-json/wc/v3/products", auth=(customer_key, secret_key),timeout=500)
         if response.status_code == 200:
             bot.send_message(chat_id, "اتصال به سایت با موفقیت برقرار شد.")
         else:
