@@ -165,17 +165,15 @@ def handle_support(message):
     bot.reply_to(message, support_text)
 
 
-# مدیریت اتصال به سایت
+
+# ذخیره‌سازی آدرس سایت
 def handle_connect_to_site(message):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("منوی اصلی")
 
-    # درخواست آدرس سایت از کاربر
-    bot.reply_to(message, "لطفاً آدرس سایت خود را وارد کنید (مانند: https://yoursite.com)", reply_markup=markup)
+    bot.reply_to(message, "لطفاً آدرس سایت خود را وارد کنید (مثلاً: https://yoursite.com):", reply_markup=markup)
     bot.register_next_step_handler(message, save_site_url)
 
-
-# ذخیره‌سازی آدرس سایت
 def save_site_url(message):
     chat_id = message.chat.id
     api_url = message.text.strip()
@@ -188,97 +186,120 @@ def save_site_url(message):
     conn.commit()
     conn.close()
 
-    bot.reply_to(message, "آدرس سایت شما ذخیره شد. حالا توکن API را وارد کنید.")
-    bot.register_next_step_handler(message, save_api_key)
+    bot.reply_to(message, "آدرس سایت ذخیره شد. لطفاً Customer Key را وارد کنید.")
+    bot.register_next_step_handler(message, save_customer_key)
 
 
-# ذخیره‌سازی توکن API
-def save_api_key(message):
+
+def save_customer_key(message):
     chat_id = message.chat.id
-    api_key = message.text.strip()
+    customer_key = message.text.strip()
 
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
     cursor.execute(''' 
-        UPDATE users SET api_key = ? WHERE chat_id = ?
-    ''', (api_key, chat_id))
+        UPDATE users SET api_key_public = ? WHERE chat_id = ?
+    ''', (customer_key, chat_id))
     conn.commit()
     conn.close()
 
-    bot.reply_to(message, "اتصال به سایت با موفقیت انجام شد.")
+    bot.reply_to(message, "Customer Key ذخیره شد. لطفاً Secret Key را وارد کنید.")
+    bot.register_next_step_handler(message, save_secret_key)
 
-    # دکمه دریافت لیست محصولات را نمایش می‌دهیم
-    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("دریافت لیست محصولات", "منوی اصلی")
-    bot.reply_to(message, "اتصال به سایت انجام شد. اکنون می‌توانید لیست محصولات را دریافت کنید.", reply_markup=markup)
+    def save_secret_key(message):
+    chat_id = message.chat.id
+    secret_key = message.text.strip()
+
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute(''' 
+        UPDATE users SET api_key_secret = ? WHERE chat_id = ?
+    ''', (secret_key, chat_id))
+    conn.commit()
+    conn.close()
+
+    bot.reply_to(message, "Secret Key ذخیره شد. حالا در حال بررسی اتصال به سایت هستیم...")
+
+    # بررسی اتصال
+    test_api_connection(chat_id)
+
+def test_api_connection(chat_id):
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT api_url, api_key_public, api_key_secret FROM users WHERE chat_id = ?', (chat_id,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if not user or not user[0] or not user[1] or not user[2]:
+        bot.reply_to(chat_id, "اطلاعات ناقص است. لطفاً دوباره تلاش کنید.")
+        return
+
+    api_url, customer_key, secret_key = user
+
+    try:
+        response = requests.get(f"{api_url}/wp-json/wc/v3/products", auth=(customer_key, secret_key))
+        if response.status_code == 200:
+            bot.reply_to(chat_id, "اتصال به سایت با موفقیت برقرار شد.")
+
+            # منوی محصولات
+            markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+            markup.add("دریافت لیست محصولات", "منوی اصلی")
+            bot.reply_to(chat_id, "اکنون می‌توانید لیست محصولات را دریافت کنید.", reply_markup=markup)
+        else:
+            raise Exception("خطا در اعتبارسنجی اطلاعات API.")
+    except Exception as e:
+        bot.reply_to(chat_id, "اتصال برقرار نشد. لطفاً اطلاعات وارد شده را بررسی کنید و دوباره امتحان کنید.")
 
 
-# دکمه دریافت لیست محصولات
 @bot.message_handler(func=lambda message: message.text == 'دریافت لیست محصولات')
 def handle_get_products(message):
-    if not is_site_connected(message.chat.id):
-        bot.reply_to(message, "ابتدا باید سایت خود را متصل کنید.")
+    chat_id = message.chat.id
+
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT api_url, api_key_public, api_key_secret FROM users WHERE chat_id = ?', (chat_id,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if not user or not user[0] or not user[1] or not user[2]:
+        bot.reply_to(chat_id, "ابتدا باید اطلاعات اتصال به سایت را وارد کنید.")
         return
-    
-    # درخواست به API برای دریافت لیست محصولات
+
+    api_url, customer_key, secret_key = user
+
     try:
         # ارسال پیام ساعت شنی برای اطلاع از پردازش
-        loading_message = bot.reply_to(message, "⏳ در حال دریافت لیست محصولات، لطفاً صبور باشید...")
+        loading_message = bot.reply_to(message, "⏳")
 
-        # دریافت محصولات از سایت
-        products = get_products_from_site(message.chat.id)
-        
-        # ایجاد فایل اکسل
-        df = pd.DataFrame(products, columns=["ID", "Name", "Price"])
+        # دریافت محصولات از API
+        response = requests.get(f"{api_url}/wp-json/wc/v3/products", auth=(customer_key, secret_key))
+        if response.status_code != 200:
+            raise Exception("خطا در دریافت لیست محصولات.")
+
+        products = response.json()
+        product_list = []
+
+        # ساخت دیتافریم از محصولات
+        for product in products:
+            product_list.append({
+                "ID": product['id'],
+                "Name": product['name'],
+                "Stock": product.get('stock_quantity', 'نامشخص'),
+                "Price": product['price']
+            })
+
+        df = pd.DataFrame(product_list)
         excel_file_path = "/tmp/products.xlsx"
         df.to_excel(excel_file_path, index=False)
-        
+
         # حذف پیام ساعت شنی پس از آماده شدن اکسل
         bot.delete_message(message.chat.id, loading_message.message_id)
 
         # ارسال فایل اکسل به کاربر
         with open(excel_file_path, 'rb') as file:
             bot.send_document(message.chat.id, file, caption="لیست محصولات سایت شما")
-        
     except Exception as e:
-        print(f"Error: {e}")
-        bot.reply_to(message, "خطا در دریافت محصولات. لطفاً دوباره تلاش کنید.")
-
-
-# تابع بررسی اتصال به سایت
-def is_site_connected(chat_id):
-    # بررسی می‌کنیم که آیا کاربر اطلاعات اتصال به سایت را وارد کرده یا نه
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM users WHERE chat_id = ?', (chat_id,))
-    user = cursor.fetchone()
-    conn.close()
-    
-    # اگر اطلاعات API موجود بود، متصل شده است
-    return user and user[5] is not None  # فرض می‌کنیم ستون 5 مربوط به اطلاعات API است
-
-
-# تابع برای دریافت محصولات از API سایت
-def get_products_from_site(chat_id):
-    # اطلاعات API برای سایت
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT api_url, api_key FROM users WHERE chat_id = ?', (chat_id,))
-    user = cursor.fetchone()
-    conn.close()
-    
-    if user is None:
-        raise Exception("اطلاعات API یافت نشد.")
-    
-    api_url = user[0]
-    api_key = user[1]
-    
-    # ارسال درخواست به API
-    response = requests.get(f"{api_url}/wp-json/wc/v3/products", auth=(api_key, ''))
-    if response.status_code == 200:
-        return response.json()  # فرض می‌کنیم پاسخ از نوع JSON است
-    else:
-        raise Exception("خطا در ارتباط با API سایت.")
+        bot.reply_to(chat_id, f"خطا: {e}")
 
 
 # روت برای نگه داشتن ربات آنلاین در ریپلیت
