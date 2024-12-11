@@ -7,7 +7,6 @@ import sqlite3
 from datetime import datetime
 import uuid
 import requests
-import pandas as pd
 
 load_dotenv()
 # تنظیمات اساسی
