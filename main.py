@@ -206,7 +206,7 @@ def save_customer_key(message):
     bot.reply_to(message, "Customer Key ذخیره شد. لطفاً Secret Key را وارد کنید.")
     bot.register_next_step_handler(message, save_secret_key)
 
-    def save_secret_key(message):
+def save_secret_key(message):
     chat_id = message.chat.id
     secret_key = message.text.strip()
 
