@@ -39,7 +39,8 @@ def init_db():
             phone_number TEXT,
             registered_at DATETIME,
             api_url TEXT,
-            api_key TEXT
+            consumer_key TEXT,
+            consumer_secret TEXT
         )
     ''')
 
@@ -187,20 +188,37 @@ def save_site_url(message):
     conn.commit()
     conn.close()
 
-    bot.reply_to(message, "آدرس سایت شما ذخیره شد. حالا توکن API را وارد کنید.")
-    bot.register_next_step_handler(message, save_api_key)
+    bot.reply_to(message, "آدرس سایت شما ذخیره شد. حالا کلید مصرف‌کننده را وارد کنید.")
+    bot.register_next_step_handler(message, save_consumer_key)
 
 
-# ذخیره‌سازی توکن API
-def save_api_key(message):
+# ذخیره‌سازی کلید مصرف‌کننده
+def save_consumer_key(message):
     chat_id = message.chat.id
-    api_key = message.text.strip()
+    consumer_key = message.text.strip()
 
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
     cursor.execute(''' 
-        UPDATE users SET api_key = ? WHERE chat_id = ?
-    ''', (api_key, chat_id))
+        UPDATE users SET consumer_key = ? WHERE chat_id = ?
+    ''', (consumer_key, chat_id))
+    conn.commit()
+    conn.close()
+
+    bot.reply_to(message, "کلید مصرف‌کننده ذخیره شد. حالا رمز مصرف‌کننده را وارد کنید.")
+    bot.register_next_step_handler(message, save_consumer_secret)
+
+
+# ذخیره‌سازی رمز مصرف‌کننده
+def save_consumer_secret(message):
+    chat_id = message.chat.id
+    consumer_secret = message.text.strip()
+
+    conn = sqlite3.connect('bot_database.db')
+    cursor = conn.cursor()
+    cursor.execute(''' 
+        UPDATE users SET consumer_secret = ? WHERE chat_id = ?
+    ''', (consumer_secret, chat_id))
     conn.commit()
     conn.close()
 
@@ -262,7 +280,7 @@ def get_products_from_site(chat_id):
     # اطلاعات API برای سایت
     conn = sqlite3.connect('bot_database.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT api_url, api_key FROM users WHERE chat_id = ?', (chat_id,))
+    cursor.execute('SELECT api_url, consumer_key, consumer_secret FROM users WHERE chat_id = ?', (chat_id,))
     user = cursor.fetchone()
     conn.close()
     
@@ -270,10 +288,11 @@ def get_products_from_site(chat_id):
         raise Exception("اطلاعات API یافت نشد.")
     
     api_url = user[0]
-    api_key = user[1]
+    consumer_key = user[1]
+    consumer_secret = user[2]
     
     # ارسال درخواست به API
-    response = requests.get(f"{api_url}/wp-json/wc/v3/products", auth=(api_key, ''))
+    response = requests.get(f"{api_url}/wp-json/wc/v3/products", auth=(consumer_key, consumer_secret))
     if response.status_code == 200:
         return response.json()  # فرض می‌کنیم پاسخ از نوع JSON است
     else:
