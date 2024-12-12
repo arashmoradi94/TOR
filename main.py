@@ -324,6 +324,12 @@ def help_command(message):
     )
     bot.reply_to(message, help_text)
 
+@app.route('/' + TOKEN, methods=['POST'])
+def webhook():
+    json_string = request.get_data().decode('utf-8')
+    update = telebot.types.Update.de_json(json_string)
+    bot.process_new_updates([update])
+    return "OK"
 # بقیه تنظیمات وب‌هوک و اجرای اصلی مثل قبل
 if __name__ == "__main__":
     bot.remove_webhook()
