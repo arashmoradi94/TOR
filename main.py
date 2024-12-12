@@ -138,14 +138,11 @@ def save_site_url(message):
         bot.reply_to(message, "آدرس سایت معتبر نیست. لطفاً دوباره وارد کنید.")
         return
 
-    # اتصال به پایگاه داده
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-
-    # ذخیره یا بروزرسانی آدرس سایت
-    cursor.execute('''
-        INSERT OR REPLACE INTO users (chat_id, site_url) VALUES (?, ?)
-    ''', (chat_id, api_url))
+    cursor.execute(''' 
+        UPDATE users SET site_url = ? WHERE chat_id = ? 
+    ''', (api_url, chat_id))
     conn.commit()
     conn.close()
 
@@ -156,14 +153,11 @@ def save_consumer_key(message):
     chat_id = message.chat.id
     consumer_key = message.text.strip()
 
-    # اتصال به پایگاه داده
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-
-    # ذخیره یا بروزرسانی Consumer Key
-    cursor.execute('''
-        INSERT OR REPLACE INTO users (chat_id, consumer_key) VALUES (?, ?)
-    ''', (chat_id, consumer_key))
+    cursor.execute(''' 
+        UPDATE users SET consumer_key = ? WHERE chat_id = ? 
+    ''', (consumer_key, chat_id))
     conn.commit()
     conn.close()
 
@@ -174,14 +168,11 @@ def save_consumer_secret(message):
     chat_id = message.chat.id
     consumer_secret = message.text.strip()
 
-    # اتصال به پایگاه داده
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-
-    # ذخیره یا بروزرسانی Consumer Secret
-    cursor.execute('''
-        INSERT OR REPLACE INTO users (chat_id, consumer_secret) VALUES (?, ?)
-    ''', (chat_id, consumer_secret))
+    cursor.execute(''' 
+        UPDATE users SET consumer_secret = ? WHERE chat_id = ? 
+    ''', (consumer_secret, chat_id))
     conn.commit()
     conn.close()
 
@@ -227,65 +218,45 @@ def handle_get_products(message):
     site_url, consumer_key, consumer_secret = user
     
     try:
-        products = []  # لیست محصولات
-        page = 1  # شماره صفحه شروع
-
-        while True:
-            # پارامترهای درخواست
-            params = {
-                'consumer_key': consumer_key,
-                'consumer_secret': consumer_secret,
-                'per_page': 100,  # تعداد محصولات در هر صفحه
-                'page': page      # شماره صفحه
-            }
-            
-            # کدگذاری پارامترها
-            query_string = urllib.parse.urlencode(params)
-            full_url = f"{site_url}/wp-json/wc/v3/products?{query_string}"
-            
-            # درخواست محصولات
-            response = requests.get(full_url)
-            
-            if response.status_code == 200:
-                page_products = response.json()
-                
-                # اگر هیچ محصولی در صفحه نیست، حلقه را تمام می‌کنیم
-                if not page_products:
-                    break
-                
-                # افزودن محصولات صفحه به لیست
-                products.extend(page_products)
-                
-                # اگر تعداد محصولات کمتر از `per_page` باشد، به این معنی است که دیگر صفحه‌ای برای بارگذاری وجود ندارد
-                if len(page_products) < 100:
-                    break
-
-                page += 1
-            else:
-                bot.send_message(chat_id, f"خطا در دریافت صفحه {page}: {response.status_code}")
-                break
+        # پارامترهای درخواست
+        params = {
+            'consumer_key': consumer_key,
+            'consumer_secret': consumer_secret
+        }
         
-        # تبدیل محصولات به دیتافریم
-        df = pd.DataFrame([ 
-            {
-                "شناسه": p['id'],
-                "نام محصول": p['name'],
-                "قیمت": p['price'],
-                "موجودی": p.get('stock_quantity', 'نامشخص')
-            } for p in products
-        ])
+        # کدگذاری پارامترها
+        query_string = urllib.parse.urlencode(params)
+        full_url = f"{site_url}/wp-json/wc/v3/products?{query_string}"
         
-        # ذخیره در اکسل
-        excel_path = f"/tmp/products_{chat_id}.xlsx"
-        df.to_excel(excel_path, index=False, encoding='utf-8')
+        # درخواست محصولات
+        response = requests.get(full_url)
         
-        # ارسال فایل
-        with open(excel_path, 'rb') as file:
-            bot.send_document(chat_id, file, caption="لیست محصولات")
+        if response.status_code == 200:
+            products = response.json()
+            
+            # تبدیل به دیتافریم
+            df = pd.DataFrame([
+                {
+                    "شناسه": p['id'],
+                    "نام محصول": p['name'],
+                    "قیمت": p['price'],
+                    "موجودی": p.get('stock_quantity', 'نامشخص')
+                } for p in products
+            ])
+            
+            # ذخیره در اکسل
+            excel_path = f"/tmp/products_{chat_id}.xlsx"
+            df.to_excel(excel_path, index=False, encoding='utf-8')
+            
+            # ارسال فایل
+            with open(excel_path, 'rb') as file:
+                bot.send_document(chat_id, file, caption="لیست محصولات")
+        
+        else:
+            bot.send_message(chat_id, f"خطا در دریافت محصولات. کد وضعیت: {response.status_code}")
     
     except Exception as e:
         bot.send_message(chat_id, f"خطای سیستمی: {str(e)}")
-
 
 # روت‌های وب
 @app.route('/' + TOKEN, methods=['POST'])
