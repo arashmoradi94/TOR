@@ -327,5 +327,5 @@ def help_command(message):
 # بقیه تنظیمات وب‌هوک و اجرای اصلی مثل قبل
 if __name__ == "__main__":
     bot.remove_webhook()
-    bot.set_webhook(url='tor-production.up.railway.app/' + TOKEN)  # تنظیم URL وب‌هوک به آدرس اپ شما
+    bot.set_webhook(url='tor-production.up.railway.app/' + TOKEN)
     app.run(host="0.0.0.0", port=8080)
