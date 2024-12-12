@@ -15,7 +15,6 @@ import requests
 import pandas as pd
 from telebot import types
 import hashlib
-
 # تنظیمات اولیه
 load_dotenv()
 
