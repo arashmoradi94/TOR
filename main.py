@@ -138,11 +138,14 @@ def save_site_url(message):
         bot.reply_to(message, "آدرس سایت معتبر نیست. لطفاً دوباره وارد کنید.")
         return
 
+    # اتصال به پایگاه داده
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute(''' 
-        UPDATE users SET site_url = ? WHERE chat_id = ? 
-    ''', (api_url, chat_id))
+
+    # ذخیره یا بروزرسانی آدرس سایت
+    cursor.execute('''
+        INSERT OR REPLACE INTO users (chat_id, site_url) VALUES (?, ?)
+    ''', (chat_id, api_url))
     conn.commit()
     conn.close()
 
@@ -153,11 +156,14 @@ def save_consumer_key(message):
     chat_id = message.chat.id
     consumer_key = message.text.strip()
 
+    # اتصال به پایگاه داده
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute(''' 
-        UPDATE users SET consumer_key = ? WHERE chat_id = ? 
-    ''', (consumer_key, chat_id))
+
+    # ذخیره یا بروزرسانی Consumer Key
+    cursor.execute('''
+        INSERT OR REPLACE INTO users (chat_id, consumer_key) VALUES (?, ?)
+    ''', (chat_id, consumer_key))
     conn.commit()
     conn.close()
 
@@ -168,11 +174,14 @@ def save_consumer_secret(message):
     chat_id = message.chat.id
     consumer_secret = message.text.strip()
 
+    # اتصال به پایگاه داده
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute(''' 
-        UPDATE users SET consumer_secret = ? WHERE chat_id = ? 
-    ''', (consumer_secret, chat_id))
+
+    # ذخیره یا بروزرسانی Consumer Secret
+    cursor.execute('''
+        INSERT OR REPLACE INTO users (chat_id, consumer_secret) VALUES (?, ?)
+    ''', (chat_id, consumer_secret))
     conn.commit()
     conn.close()
 
@@ -257,7 +266,7 @@ def handle_get_products(message):
                 break
         
         # تبدیل محصولات به دیتافریم
-        df = pd.DataFrame([
+        df = pd.DataFrame([ 
             {
                 "شناسه": p['id'],
                 "نام محصول": p['name'],
