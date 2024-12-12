@@ -222,6 +222,8 @@ def handle_get_products(message):
         params = {
             'consumer_key': consumer_key,
             'consumer_secret': consumer_secret
+            'per_page': 100,  # تعداد محصولات در هر صفحه
+            'page': page  # شماره صفحه
         }
         
         # کدگذاری پارامترها
@@ -232,7 +234,18 @@ def handle_get_products(message):
         response = requests.get(full_url)
         
         if response.status_code == 200:
-            products = response.json()
+            page_products = response.json()
+            
+            # اگر هیچ محصولی در صفحه نیست، حلقه را تمام می‌کنیم
+            if not page_products:
+                break
+            
+            # افزودن محصولات صفحه به لیست
+            products.extend(page_products)
+            page += 1
+        else:
+            print(f"خطا در دریافت صفحه {page}: {response.status_code}")
+            break
             
             # تبدیل به دیتافریم
             df = pd.DataFrame([
