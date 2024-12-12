@@ -10,74 +10,177 @@ import requests
 import pandas as pd
 import json
 import urllib.parse
+from telebot import types
+from datetime import datetime
 
 # بارگذاری متغیرهای محیطی
 load_dotenv()
 
-# تنظیمات اساسی
-TOKEN = os.environ.get('TOKEN')
-ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID')
-
+# تنظیمات
+TOKEN = os.getenv('TOKEN')
 if not TOKEN:
     raise ValueError("توکن تلگرام تنظیم نشده است")
 
-# ساخت اپلیکیشن فلسک
-app = Flask(__name__)
-
-# ساخت ربات تلگرام
-bot = TeleBot(TOKEN)
-
 DB_PATH = '/tmp/bot_database.db'
 
-# تابع پیشرفته برای تست و اتصال به API
-def test_woocommerce_api(api_url, consumer_key, consumer_secret):
-    """
-    تست اتصال به API ووکامرس با بررسی‌های دقیق
-    """
-    try:
-        # ساخت پارامترهای احراز هویت
-        params = {
-            'consumer_key': consumer_key,
-            'consumer_secret': consumer_secret
-        }
-        
-        # کدگذاری پارامترها برای URL
-        query_string = urllib.parse.urlencode(params)
-        full_url = f"{api_url}/wp-json/wc/v3/products?{query_string}"
-        
-        # درخواست با اطلاعات کامل
-        response = requests.get(
-            full_url,
-            timeout=10
-        )
-        
-        # بررسی وضعیت درخواست
-        if response.status_code == 200:
-            products = response.json()
-            return {
-                'status': True, 
-                'message': f'اتصال موفق. تعداد محصولات: {len(products)}',
-                'products_count': len(products)
-            }
-        else:
-            return {
-                'status': False, 
-                'message': f'خطا در اتصال. کد وضعیت: {response.status_code}',
-                'error_details': response.text
-            }
-    
-    except requests.exceptions.RequestException as e:
-        return {
-            'status': False, 
-            'message': f'خطای اتصال: {str(e)}'
-        }
+app = Flask(__name__)
+bot = TeleBot(TOKEN)
 
-# تنظیمات پایگاه داده
+# تابع ایجاد پایگاه داده
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute(''' 
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
+            chat_id INTEGER PRIMARY KEY,
+            first_name TEXT,
+            last_name TEXT,
+            phone_number TEXT,
+            registered_at DATETIME,
+            site_url TEXT,
+            consumer_key TEXT,
+            consumer_secret TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# دستورات ربات
+@bot.message_handler(commands=['start'])
+def start_command(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    contact_button = types.KeyboardButton('اشتراک‌گذاری شماره تلفن', request_contact=True)
+    markup.add(contact_button)
+    bot.reply_to(message, 
+                 f"سلام {message.from_user.first_name}، خوش آمدید! لطفاً شماره تماس خود را ارسال کنید.", 
+                 reply_markup=markup)
+
+@bot.message_handler(content_types=['contact'])
+def handle_contact(message):
+    contact = message.contact
+    chat_id = message.chat.id
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT OR REPLACE INTO users 
+        (chat_id, first_name, last_name, phone_number, registered_at)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (chat_id, contact.first_name, contact.last_name, contact.phone_number, datetime.now()))
+    conn.commit()
+    conn.close()
+
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row('اتصال به سایت', 'دریافت محصولات به اکسل')
+    bot.reply_to(message, 'منوی اصلی:', reply_markup=markup)
+
+@bot.message_handler(func=lambda message: message.text == 'اتصال به سایت')
+def connect_to_site(message):
+    bot.reply_to(message, "لطفاً آدرس سایت خود را وارد کنید:")
+    bot.register_next_step_handler(message, save_site_url)
+
+def save_site_url(message):
+    chat_id = message.chat.id
+    site_url = message.text.strip()
+
+    if not site_url.startswith("http"):
+        bot.reply_to(message, "آدرس سایت معتبر نیست. دوباره تلاش کنید.")
+        return
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET site_url = ? WHERE chat_id = ?", (site_url, chat_id))
+    conn.commit()
+    conn.close()
+
+    bot.reply_to(message, "آدرس سایت ذخیره شد. لطفاً Consumer Key را وارد کنید.")
+    bot.register_next_step_handler(message, save_consumer_key)
+
+def save_consumer_key(message):
+    chat_id = message.chat.id
+    consumer_key = message.text.strip()
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET consumer_key = ? WHERE chat_id = ?", (consumer_key, chat_id))
+    conn.commit()
+    conn.close()
+
+    bot.reply_to(message, "Consumer Key ذخیره شد. لطفاً Consumer Secret را وارد کنید.")
+    bot.register_next_step_handler(message, save_consumer_secret)
+
+def save_consumer_secret(message):
+    chat_id = message.chat.id
+    consumer_secret = message.text.strip()
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET consumer_secret = ? WHERE chat_id = ?", (consumer_secret, chat_id))
+    conn.commit()
+    conn.close()
+
+    bot.reply_to(message, "Consumer Secret ذخیره شد. اطلاعات اتصال کامل شد.")
+
+@bot.message_handler(func=lambda message: message.text == 'دریافت محصولات به اکسل')
+def export_products_to_excel(message):
+    chat_id = message.chat.id
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT site_url, consumer_key, consumer_secret FROM users WHERE chat_id = ?", (chat_id,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if not user or not all(user):
+        bot.reply_to(message, "ابتدا اطلاعات اتصال به سایت را وارد کنید.")
+        return
+
+    site_url, consumer_key, consumer_secret = user
+    try:
+        params = {'consumer_key': consumer_key, 'consumer_secret': consumer_secret}
+        query_string = urllib.parse.urlencode(params)
+        full_url = f"{site_url}/wp-json/wc/v3/products?{query_string}"
+        response = requests.get(full_url)
+
+        if response.status_code == 200:
+            products = response.json()
+
+            data = [{
+                'ID': product['id'],
+                'Name': product['name'],
+                'Price': product['price'],
+                'Stock': product.get('stock_quantity', 'N/A')
+            } for product in products]
+            df = pd.DataFrame(data)
+
+            file_path = '/tmp/products.xlsx'
+            df.to_excel(file_path, index=False)
+
+            with open(file_path, 'rb') as file:
+                bot.send_document(chat_id, file)
+        else:
+            bot.reply_to(message, f"خطا در دریافت محصولات. کد وضعیت: {response.status_code}")
+
+    except Exception as e:
+        bot.reply_to(message, f"خطای سیستمی: {str(e)}")
+
+# وب‌هوک
+@app.route('/' + TOKEN, methods=['POST'])
+def webhook():
+    json_string = request.get_data().decode('utf-8')
+    update = types.Update.de_json(json_string)
+    bot.process_new_updates([update])
+    return "OK", 200
+
+@app.route('/')
+def home():
+    return "ربات فعال است!", 200
+
+if __name__ == "__main__":
+    init_db()
+    bot.remove_webhook()
+    bot.set_webhook(url='https://your-railway-app-url/' + TOKEN)
+    app.run(host="0.0.0.0", port=8080)
             chat_id INTEGER PRIMARY KEY,
             first_name TEXT,
             last_name TEXT,
