@@ -176,11 +176,17 @@ def webhook():
 def home():
     return "ربات فعال است!", 200
 
-if __name__ == "__main__":
-    init_db()
-    bot.remove_webhook()
-    bot.set_webhook(url='https://your-railway-app-url/' + TOKEN)
-    app.run(host="0.0.0.0", port=8080)
+import sqlite3
+from flask import Flask
+
+app = Flask(__name__)
+
+def init_db():
+    conn = sqlite3.connect('database.db')  # اتصال به دیتابیس
+    cur = conn.cursor()
+    # ایجاد جدول در دیتابیس
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS users (
             chat_id INTEGER PRIMARY KEY,
             first_name TEXT,
             last_name TEXT,
