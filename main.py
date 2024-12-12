@@ -139,6 +139,7 @@ def get_first_name(message):
 def get_last_name(message, first_name):
     last_name = message.text.strip()
     
+    # ارسال دک ```python
     # ارسال دکمه اشتراک‌گذاری شماره تلفن
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     contact_button = types.KeyboardButton('🔖 اشتراک‌گذاری شماره تلفن', request_contact=True)
@@ -195,8 +196,7 @@ def handle_contact(message, first_name=None, last_name=None):
         )
     
     except Exception as e:
-        session.roll ```python
-        back()
+        session.rollback()  # اصلاح شده
         logger.error(f"خطا در ذخیره کاربر: {str(e)}")
         bot.reply_to(message, "❌ متأسفانه خطایی در ذخیره اطلاعات شما رخ داده است.")
     
@@ -265,7 +265,7 @@ def save_consumer_key(message):
     if user:
         user.consumer_key = consumer_key
         session.commit()
-        bot.reply_to(message, "✅ Consumer Key ذخیره شد. لطفاً Consumer Secret را وارد کنید.")
+        bot .reply_to(message, "✅ Consumer Key ذخیره شد. لطفاً Consumer Secret را وارد کنید.")
         bot.register_next_step_handler(message, save_consumer_secret)
     else:
         bot.reply_to(message, "❌ ابتدا باید شماره تماس خود را ارسال کنید.")
@@ -317,7 +317,6 @@ def help_command(message):
     )
     bot.reply_to(message, help_text)
 
- ```python
 # بقیه تنظیمات وب‌هوک و اجرای اصلی مثل قبل
 
 if __name__ == "__main__":
