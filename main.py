@@ -2,7 +2,8 @@ import os
 import hashlib
 from dotenv import load_dotenv
 from flask import Flask, request
-from telebot import TeleBot
+import telebot  # اضافه کردن این خط
+from telebot import TeleBot  # وارد کردن TeleBot از telebot
 import sqlite3
 from datetime import datetime
 import requests
