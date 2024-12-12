@@ -11,26 +11,33 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
-import requests
 import hashlib
+from telebot import types
 
-# تنظیمات اولیه
+# بارگذاری متغیرهای محیطی از فایل .env
 load_dotenv()
 
 # پیکربندی لاگینگ
 logging.basicConfig(
-    level=logging.DEBUG,  # تغییر سطح لاگ به DEBUG برای اشکال‌زدایی بیشتر
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# دریافت متغیرهای محیطی
+# دریافت اطلاعات از متغیرهای محیطی
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-DATABASE_URL = os.getenv('DATABASE_URL')
+MYSQL_USER = os.getenv('MYSQL_USER')
+MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD')
+MYSQL_HOST = os.getenv('MYSQL_HOST')
+MYSQL_PORT = os.getenv('MYSQL_PORT')
+MYSQL_DATABASE = os.getenv('MYSQL_DATABASE')
 
 # بررسی متغیرهای ضروری
-if not all([TOKEN, DATABASE_URL]):
-    raise ValueError("توکن یا آدرس دیتابیس تنظیم نشده است")
+if not all([TOKEN, MYSQL_USER, MYSQL_PASSWORD, MYSQL_HOST, MYSQL_PORT, MYSQL_DATABASE]):
+    raise ValueError("توکن یا اطلاعات دیتابیس تنظیم نشده است")
+
+# ساخت آدرس اتصال به دیتابیس MySQL
+DATABASE_URL = f"mysql+mysqlconnector://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}"
 
 # تنظیمات SQLAlchemy
 Base = declarative_base()
@@ -315,15 +322,7 @@ def help_command(message):
     bot.reply_to(message, help_text)
 
 # بقیه تنظیمات وب‌هوک و اجرای اصلی مثل قبل
-
-@app.route(f"/{TOKEN}", methods=['POST'])
-def telegram_webhook():
-    json_data = request.get_data().decode("utf-8")
-    update = telebot.types.Update.de_json(json_data)
-    bot.process_new_updates([update])
-    return "OK", 200
-
 if __name__ == "__main__":
     bot.remove_webhook()
-    bot.set_webhook(url=f'https://tor-production.up.railway.app/{TOKEN}')
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
+    bot.set_webhook(url='tor-production.up.railway.app/' + TOKEN)  # تنظیم URL وب‌هوک به آدرس اپ شما
+    app.run(host="0.0.0.0", port=8080)
