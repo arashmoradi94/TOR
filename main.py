@@ -12,15 +12,14 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import requests
-import pandas as pd
-from telebot import types
 import hashlib
+
 # تنظیمات اولیه
 load_dotenv()
 
 # پیکربندی لاگینگ
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # تغییر سطح لاگ به DEBUG برای اشکال‌زدایی بیشتر
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -138,7 +137,6 @@ def get_first_name(message):
 def get_last_name(message, first_name):
     last_name = message.text.strip()
     
-    # ارسال دک ```python
     # ارسال دکمه اشتراک‌گذاری شماره تلفن
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     contact_button = types.KeyboardButton('🔖 اشتراک‌گذاری شماره تلفن', request_contact=True)
@@ -318,7 +316,14 @@ def help_command(message):
 
 # بقیه تنظیمات وب‌هوک و اجرای اصلی مثل قبل
 
+@app.route(f"/{TOKEN}", methods=['POST'])
+def telegram_webhook():
+    json_data = request.get_data().decode("utf-8")
+    update = telebot.types.Update.de_json(json_data)
+    bot.process_new_updates([update])
+    return "OK", 200
+
 if __name__ == "__main__":
     bot.remove_webhook()
-    bot.set_webhook(url='tor-production.up.railway.app/' + TOKEN)
-    app.run(host="0.0.0.0", port=8080)
+    bot.set_webhook(url=f'https://tor-production.up.railway.app/{TOKEN}')
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
