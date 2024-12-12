@@ -3,14 +3,15 @@ import hashlib
 from dotenv import load_dotenv
 from flask import Flask, request
 from telebot import TeleBot
-import telebot
 import sqlite3
 from datetime import datetime
 import requests
 import pandas as pd
 import json
+from requests.auth import HTTPBasicAuth  # برای استفاده از احراز هویت پایه
 
 load_dotenv()
+
 # تنظیمات اساسی
 TOKEN = os.environ.get('TOKEN')  # توکن ربات تلگرام
 ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID')
@@ -25,6 +26,7 @@ app = Flask(__name__)
 bot = TeleBot(TOKEN)
 
 DB_PATH = '/tmp/bot_database.db'
+
 # تنظیمات پایگاه داده
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -155,7 +157,8 @@ def test_api_connection(chat_id):
     api_url, customer_key, secret_key = user
 
     try:
-        response = requests.get(f"{api_url}/wp-json/wc/v3/products", auth=(customer_key, secret_key), timeout=500)
+        # استفاده از احراز هویت به شکل صحیح
+        response = requests.get(f"{api_url}/wp-json/wc/v3/products", auth=HTTPBasicAuth(customer_key, secret_key), timeout=500)
         if response.status_code == 200:
             bot.send_message(chat_id, "اتصال به سایت با موفقیت برقرار شد.")
         else:
@@ -184,7 +187,8 @@ def handle_get_products(message):
     try:
         page = 1
         while True:
-            response = requests.get(f"{api_url}/wp-json/wc/v3/products?page={page}&per_page=50", auth=(customer_key, secret_key))
+            # درخواست برای دریافت محصولات
+            response = requests.get(f"{api_url}/wp-json/wc/v3/products?page={page}&per_page=50", auth=HTTPBasicAuth(customer_key, secret_key))
             if response.status_code != 200:
                 raise Exception("خطا در دریافت محصولات.")
 
@@ -229,5 +233,5 @@ def home():
 if __name__ == "__main__":
     init_db()
     bot.remove_webhook()
-    bot.set_webhook(url='tor-production.up.railway.app/' + TOKEN)
-    app.run(host="0.0.0.0", port=8080)
+ bot.set_webhook(url='https://your-heroku-app-url.com/' + TOKEN)  
+ app.run(host="0.0.0.0", port=8080)
