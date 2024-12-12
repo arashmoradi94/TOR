@@ -11,3 +11,4 @@ urllib3==2.0.2
 cryptography==41.0.1
 gunicorn==20.1.0
 pymysql
+mysqlclient
