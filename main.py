@@ -246,9 +246,14 @@ def handle_get_products(message):
                 
                 # افزودن محصولات صفحه به لیست
                 products.extend(page_products)
+                
+                # اگر تعداد محصولات کمتر از `per_page` باشد، به این معنی است که دیگر صفحه‌ای برای بارگذاری وجود ندارد
+                if len(page_products) < 100:
+                    break
+
                 page += 1
             else:
-                print(f"خطا در دریافت صفحه {page}: {response.status_code}")
+                bot.send_message(chat_id, f"خطا در دریافت صفحه {page}: {response.status_code}")
                 break
         
         # تبدیل محصولات به دیتافریم
