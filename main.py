@@ -8,6 +8,7 @@ import sqlite3
 from datetime import datetime
 import requests
 import pandas as pd
+import json
 
 load_dotenv()
 # تنظیمات اساسی
@@ -26,7 +27,7 @@ bot = TeleBot(TOKEN)
 DB_PATH = '/tmp/bot_database.db'
 # تنظیمات پایگاه داده
 def init_db():
-    conn = sqlite3.connect('DB_PATH')
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     # جدول کاربران
@@ -70,7 +71,7 @@ def handle_contact(message):
     chat_id = message.chat.id
 
     # ذخیره اطلاعات کاربر در پایگاه داده
-    conn = sqlite3.connect('DB_PATH')
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(''' 
         INSERT OR REPLACE INTO users 
@@ -82,7 +83,7 @@ def handle_contact(message):
 
     # منوی اصلی
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row('اتصال به سایت')
+    markup.row('اتصال به سایت', 'دریافت لیست محصولات')
     bot.reply_to(message, 'منوی اصلی:', reply_markup=markup)
 
 # ذخیره‌سازی آدرس سایت
@@ -99,10 +100,10 @@ def save_site_url(message):
         bot.reply_to(message, "آدرس سایت معتبر نیست. لطفاً دوباره وارد کنید.")
         return
 
-    conn = sqlite3.connect('DB_PATH')
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(''' 
-        UPDATE users SET api_url = ? WHERE chat_id = ?
+        UPDATE users SET api_url = ? WHERE chat_id = ? 
     ''', (api_url, chat_id))
     conn.commit()
     conn.close()
@@ -114,10 +115,10 @@ def save_customer_key(message):
     chat_id = message.chat.id
     customer_key = message.text.strip()
 
-    conn = sqlite3.connect('DB_PATH')
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(''' 
-        UPDATE users SET api_key_public = ? WHERE chat_id = ?
+        UPDATE users SET api_key_public = ? WHERE chat_id = ? 
     ''', (encrypt_key(customer_key), chat_id))
     conn.commit()
     conn.close()
@@ -129,10 +130,10 @@ def save_secret_key(message):
     chat_id = message.chat.id
     secret_key = message.text.strip()
 
-    conn = sqlite3.connect('DB_PATH')
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(''' 
-        UPDATE users SET api_key_secret = ? WHERE chat_id = ?
+        UPDATE users SET api_key_secret = ? WHERE chat_id = ? 
     ''', (encrypt_key(secret_key), chat_id))
     conn.commit()
     conn.close()
@@ -141,7 +142,7 @@ def save_secret_key(message):
     test_api_connection(chat_id)
 
 def test_api_connection(chat_id):
-    conn = sqlite3.connect('DB_PATH')
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT api_url, api_key_public, api_key_secret FROM users WHERE chat_id = ?', (chat_id,))
     user = cursor.fetchone()
@@ -154,7 +155,7 @@ def test_api_connection(chat_id):
     api_url, customer_key, secret_key = user
 
     try:
-        response = requests.get(f"{api_url}/wp-json/wc/v3/products", auth=(customer_key, secret_key),timeout=500)
+        response = requests.get(f"{api_url}/wp-json/wc/v3/products", auth=(customer_key, secret_key), timeout=500)
         if response.status_code == 200:
             bot.send_message(chat_id, "اتصال به سایت با موفقیت برقرار شد.")
         else:
@@ -162,11 +163,12 @@ def test_api_connection(chat_id):
     except Exception as e:
         bot.send_message(chat_id, f"خطا در اتصال: {str(e)}")
 
+# دریافت لیست محصولات و ارسال به اکسل
 @bot.message_handler(func=lambda message: message.text == 'دریافت لیست محصولات')
 def handle_get_products(message):
     chat_id = message.chat.id
 
-    conn = sqlite3.connect('DB_PATH')
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT api_url, api_key_public, api_key_secret FROM users WHERE chat_id = ?', (chat_id,))
     user = cursor.fetchone()
