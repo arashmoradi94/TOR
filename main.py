@@ -14,6 +14,8 @@ from datetime import datetime
 import hashlib
 from telebot import types
 
+pymysql.install_as_MySQLdb() 
+
 # بارگذاری متغیرهای محیطی از فایل .env
 load_dotenv()
 
@@ -43,6 +45,7 @@ DATABASE_URL = os.getenv('MYSQL_URL')
 Base = declarative_base()
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 Session = sessionmaker(bind=engine)
+
 
 # مدل کاربر
 class User(Base):
