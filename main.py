@@ -218,58 +218,60 @@ def handle_get_products(message):
     site_url, consumer_key, consumer_secret = user
     
     try:
-        # پارامترهای درخواست
-        params = {
-            'consumer_key': consumer_key,
-            'consumer_secret': consumer_secret,
-            'per_page': 100,  # تعداد محصولات در هر صفحه
-            'page': page  # شماره صفحه
-        }
-        
-        # کدگذاری پارامترها
-        query_string = urllib.parse.urlencode(params)
-        full_url = f"{site_url}/wp-json/wc/v3/products?{query_string}"
-        
-        # درخواست محصولات
-        response = requests.get(full_url)
-        
-        if response.status_code == 200:
-            page_products = response.json()
+        products = []  # لیست محصولات
+        page = 1  # شماره صفحه شروع
+
+        while True:
+            # پارامترهای درخواست
+            params = {
+                'consumer_key': consumer_key,
+                'consumer_secret': consumer_secret,
+                'per_page': 100,  # تعداد محصولات در هر صفحه
+                'page': page      # شماره صفحه
+            }
             
-            # اگر هیچ محصولی در صفحه نیست، حلقه را تمام می‌کنیم
-            if not page_products:
+            # کدگذاری پارامترها
+            query_string = urllib.parse.urlencode(params)
+            full_url = f"{site_url}/wp-json/wc/v3/products?{query_string}"
+            
+            # درخواست محصولات
+            response = requests.get(full_url)
+            
+            if response.status_code == 200:
+                page_products = response.json()
+                
+                # اگر هیچ محصولی در صفحه نیست، حلقه را تمام می‌کنیم
+                if not page_products:
+                    break
+                
+                # افزودن محصولات صفحه به لیست
+                products.extend(page_products)
+                page += 1
+            else:
+                print(f"خطا در دریافت صفحه {page}: {response.status_code}")
                 break
-            
-            # افزودن محصولات صفحه به لیست
-            products.extend(page_products)
-            page += 1
-        else:
-            print(f"خطا در دریافت صفحه {page}: {response.status_code}")
-            break
-            
-            # تبدیل به دیتافریم
-            df = pd.DataFrame([
-                {
-                    "شناسه": p['id'],
-                    "نام محصول": p['name'],
-                    "قیمت": p['price'],
-                    "موجودی": p.get('stock_quantity', 'نامشخص')
-                } for p in products
-            ])
-            
-            # ذخیره در اکسل
-            excel_path = f"/tmp/products_{chat_id}.xlsx"
-            df.to_excel(excel_path, index=False, encoding='utf-8')
-            
-            # ارسال فایل
-            with open(excel_path, 'rb') as file:
-                bot.send_document(chat_id, file, caption="لیست محصولات")
         
-        else:
-            bot.send_message(chat_id, f"خطا در دریافت محصولات. کد وضعیت: {response.status_code}")
+        # تبدیل محصولات به دیتافریم
+        df = pd.DataFrame([
+            {
+                "شناسه": p['id'],
+                "نام محصول": p['name'],
+                "قیمت": p['price'],
+                "موجودی": p.get('stock_quantity', 'نامشخص')
+            } for p in products
+        ])
+        
+        # ذخیره در اکسل
+        excel_path = f"/tmp/products_{chat_id}.xlsx"
+        df.to_excel(excel_path, index=False, encoding='utf-8')
+        
+        # ارسال فایل
+        with open(excel_path, 'rb') as file:
+            bot.send_document(chat_id, file, caption="لیست محصولات")
     
     except Exception as e:
         bot.send_message(chat_id, f"خطای سیستمی: {str(e)}")
+
 
 # روت‌های وب
 @app.route('/' + TOKEN, methods=['POST'])
