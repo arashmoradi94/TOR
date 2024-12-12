@@ -37,7 +37,7 @@ if not all([TOKEN, MYSQL_USER, MYSQL_PASSWORD, MYSQL_HOST, MYSQL_PORT, MYSQL_DAT
     raise ValueError("توکن یا اطلاعات دیتابیس تنظیم نشده است")
 
 # ساخت آدرس اتصال به دیتابیس MySQL
-DATABASE_URL = f"mysql+mysqlconnector://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}"
+DATABASE_URL = os.getenv('MYSQL_URL')
 
 # تنظیمات SQLAlchemy
 Base = declarative_base()
