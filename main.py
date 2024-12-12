@@ -221,7 +221,7 @@ def handle_get_products(message):
         # پارامترهای درخواست
         params = {
             'consumer_key': consumer_key,
-            'consumer_secret': consumer_secret
+            'consumer_secret': consumer_secret,
             'per_page': 100,  # تعداد محصولات در هر صفحه
             'page': page  # شماره صفحه
         }
