@@ -304,8 +304,9 @@ def handle_contact(message, first_name=None, last_name=None):
         # منوی اصلی
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.row('👤 پروفایل', '🌐 اتصال به سایت')
-        markup.row('📦 دریافت اکسل محصولات', '🛍️ محصولات')
+        markup.row('🛍️ محصولات')
         markup.row('🌐 تست اتصال به سایت', '❓ راهنما')
+        markup.row('📦 دریافت اکسل محصولات', '🔬 تشخیص مشکل محصولات')
         
         bot.reply_to(
             message, 
@@ -928,13 +929,178 @@ def delete_product(message, product):
         bot.reply_to(message, "✅ محصول با موفقیت حذف شد.", reply_markup=main_menu_markup())
     else:
         bot.reply_to(message, "🔙 بازگشت به منوی اصلی.", reply_markup=main_menu_markup())
+def diagnose_product_request(user):
+    """
+    تشخیص دقیق مشکل درخواست محصولات
+    """
+    try:
+        # ایجاد اتصال به WooCommerce API
+        wcapi = API(
+            url=user.site_url,
+            consumer_key=user.consumer_key,
+            consumer_secret=user.consumer_secret,
+            version="wc/v3",
+            timeout=30
+        )
 
+        # اطلاعات پایه
+        logging.info("🔍 شروع تشخیص درخواست محصولات")
+        logging.info(f"آدرس سایت: {user.site_url}")
+        
+        # لیست پارامترهای تست
+        diagnostic_steps = [
+            {
+                'name': 'درخواست پایه',
+                'params': {},
+                'expected_keys': ['id', 'name', 'type', 'status']
+            },
+            {
+                'name': 'محصولات منتشر شده',
+                'params': {'status': 'publish'},
+                'expected_keys': ['id', 'name', 'type', 'status']
+            },
+            {
+                'name': 'محصولات پیش‌نویس',
+                'params': {'status': 'draft'},
+                'expected_keys': ['id', 'name', 'type', 'status']
+            }
+        ]
+
+        # نتایج تشخیص
+        diagnostic_results = {}
+
+        # اجرای مراحل تشخیص
+        for step in diagnostic_steps:
+            logging.info(f"\n🧪 مرحله: {step['name']}")
+            logging.info(f"پارامترها: {step['params']}")
+
+            try:
+                # درخواست محصولات
+                response = wcapi.get("products", params=step['params'])
+                
+                # اطلاعات پاسخ
+                logging.info(f"کد وضعیت: {response.status_code}")
+                
+                # بررسی وضعیت
+                if response.status_code in [200, 201]:
+                    products = response.json()
+                    
+                    # بررسی تعداد محصولات
+                    logging.info(f"تعداد محصولات: {len(products)}")
+                    
+                    # بررسی محتوای محصولات
+                    if products:
+                        first_product = products[0]
+                        
+                        # بررسی کلیدهای مورد انتظار
+                        missing_keys = [
+                            key for key in step['expected_keys'] 
+                            if key not in first_product
+                        ]
+                        
+                        # ثبت نتیجه
+                        diagnostic_results[step['name']] = {
+                            'status': True,
+                            'product_count': len(products),
+                            'missing_keys': missing_keys
+                        }
+                        
+                        # نمایش جزئیات محصول اول
+                        logging.info("جزئیات محصول اول:")
+                        for key, value in first_product.items():
+                            logging.info(f"{key}: {value}")
+                    
+                    else:
+                        diagnostic_results[step['name']] = {
+                            'status': False,
+                            'error': 'هیچ محصولی یافت نشد'
+                        }
+                
+                else:
+                    diagnostic_results[step['name']] = {
+                        'status': False,
+                        'error': response.text
+                    }
+            
+            except Exception as step_error:
+                logging.error(f"خطا در مرحله {step['name']}: {str(step_error)}")
+                diagnostic_results[step['name']] = {
+                    'status': False,
+                    'error': str(step_error)
+                }
+        
+        return diagnostic_results
+
+    except Exception as e:
+        logging.error(f"❌ خطای کلی: {str(e)}")
+        return {}
+
+# هندلر تشخیص مشکل محصولات
+@bot.message_handler(func=lambda message: message.text == '🔬 تشخیص مشکل محصولات')
+@error_handler
+def handle_product_diagnosis(message):
+    chat_id = message.chat.id
+    
+    # بررسی اطلاعات کاربر
+    session = Session()
+    user = session.query(User).filter_by(chat_id=chat_id).first()
+    session.close()
+    
+    if not user or not all([user.site_url, user.consumer_key, user.consumer_secret]):
+        bot.reply_to(message, "❌ ابتدا اطلاعات اتصال به سایت را کامل کنید.")
+        return
+    
+    # ارسال پیام در حال تشخیص
+    status_message = bot.reply_to(message, "🔬 در حال تشخیص مشکل محصولات...")
+
+    try:
+        # اجرای تشخیص
+        diagnosis_results = diagnose_product_request(user)
+
+        # ساخت متن گزارش
+        report_text = "🔍 گزارش تشخیص محصولات:\n\n"
+        for step, result in diagnosis_results.items():
+            if result['status']:
+                emoji = '✅'
+                report_text += (
+                    f"{emoji} {step}:\n"
+                    f"   📦 تعداد محصولات: {result['product_count']}\n"
+                )
+                
+                if result.get('missing_keys'):
+                    report_text += f"   ⚠️ کلیدهای از دست رفته: {', '.join(result['missing_keys'])}\n"
+            else:
+                emoji = '❌'
+                report_text += (
+                    f"{emoji} {step}:\n"
+                    f"   ⚠️ خطا: {result.get('error', 'نامشخص')}\n"
+                )
+            
+            report_text += "---\n"
+        
+        # به‌روزرسانی پیام
+        bot.edit_message_text(
+            chat_id=chat_id, 
+            message_id=status_message.message_id,
+            text=report_text
+        )
+    
+    except Exception as e:
+        bot.edit_message_text(
+            chat_id=chat_id, 
+            message_id=status_message.message_id,
+            text=f"❌ خطای کلی در تشخیص محصولات: {str(e)}"
+        )
+
+# اضافه کردن به منو
 def main_menu_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row('👤 پروفایل', '🌐 اتصال به سایت')
-    markup.row('📦 دریافت اکسل محصولات', '🛍️ محصولات')
+    markup.row('🛍️ محصولات')
     markup.row('🌐 تست اتصال به سایت', '❓ راهنما')
+    markup.row('📦 دریافت اکسل محصولات', '🔬 تشخیص مشکل محصولات')
     return markup
+
 
 @app.route('/' + TOKEN, methods=['POST'])
 def webhook():
