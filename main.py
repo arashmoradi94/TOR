@@ -298,19 +298,6 @@ def save_consumer_secret(message):
     
     session.close()
 
-# تعریف مدل Product
-class Product(Base):
-    __tablename__ = 'products'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(255), nullable=False)
-    price = Column(Integer, nullable=False)
-    stock = Column(Integer, nullable=False)
-    info = Column(Text)
-    
-# ایجاد جداول
-Base.metadata.create_all(engine)
-
 @bot.message_handler(func=lambda message: message.text == '📦 دریافت محصولات')
 @error_handler
 def export_products_to_excel(message):
@@ -323,6 +310,12 @@ def export_products_to_excel(message):
     if not user or not all([user.site_url, user.consumer_key, user.consumer_secret]):
         bot.reply_to(message, "❌ ابتدا اطلاعات اتصال به سایت را وارد کنید.")
         session.close()  # بستن سشن دیتابیس
+        return
+
+    # دریافت محصولات از WooCommerce و ذخیره آنها در دیتابیس
+    success = fetch_products_from_woocommerce(user)
+    if not success:
+        bot.reply_to(message, "❌ خطا در دریافت محصولات از سایت.")
         return
 
     # نمایش پیام در حال دریافت محصولات
