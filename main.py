@@ -344,6 +344,104 @@ def show_profile(message):
         bot.reply_to(message, "❌ اطلاعات پروفایل شما موجود نیست.")
     
     session.close()
+def comprehensive_woocommerce_test(user):
+    """
+    تست جامع ارتباط با WooCommerce
+    """
+    try:
+        # ایجاد اتصال به WooCommerce API
+        wcapi = API(
+            url=user.site_url,
+            consumer_key=user.consumer_key,
+            consumer_secret=user.consumer_secret,
+            version="wc/v3",
+            timeout=30
+        )
+
+        # لاگ‌های تفصیلی
+        logging.info("🔍 شروع تست جامع WooCommerce")
+        logging.info(f"آدرس سایت: {user.site_url}")
+        logging.info(f"Consumer Key (5 حرف اول): {user.consumer_key[:5]}")
+
+        # لیست تست‌های مختلف
+        test_methods = [
+            # تست 1: درخواست محصولات با پارامترهای مختلف
+            {
+                'name': 'درخواست محصولات',
+                'method': 'get',
+                'endpoint': 'products',
+                'params': {'per_page': 1}
+            },
+            # تست 2: درخواست اطلاعات فروشگاه
+            {
+                'name': 'اطلاعات فروشگاه',
+                'method': 'get',
+                'endpoint': 'system_status',
+                'params': {}
+            },
+            # تست 3: درخواست دسته‌بندی‌ها
+            {
+                'name': 'دسته‌بندی‌ها',
+                'method': 'get',
+                'endpoint': 'products/categories',
+                'params': {'per_page': 1}
+            }
+        ]
+
+        # نتایج تست‌ها
+        test_results = {}
+
+        # اجرای تست‌ها
+        for test in test_methods:
+            logging.info(f"\n🧪 اجرای تست: {test['name']}")
+            
+            try:
+                # اجرای درخواست
+                if test['method'] == 'get':
+                    response = wcapi.get(test['endpoint'], params=test['params'])
+                
+                # بررسی وضعیت پاسخ
+                logging.info(f"کد وضعیت: {response.status_code}")
+                
+                # چاپ هدرها
+                for key, value in response.headers.items():
+                    logging.info(f"{key}: {value}")
+                
+                # بررسی موفقیت
+                if response.status_code in [200, 201]:
+                    # پردازش پاسخ
+                    data = response.json()
+                    
+                    # لاگ اطلاعات پایه
+                    logging.info(f"تعداد آیتم‌ها: {len(data) if isinstance(data, list) else 'نامشخص'}")
+                    
+                    # اگر لیست محصولات باشد
+                    if test['endpoint'] == 'products' and data:
+                        logging.info("نمونه محصول:")
+                        logging.info(json.dumps(data[0], indent=2))
+                    
+                    test_results[test['name']] = True
+                else:
+                    logging.error(f"خطا در تست {test['name']}: {response.text}")
+                    test_results[test['name']] = False
+            
+            except Exception as test_error:
+                logging.error(f"خطای تست {test['name']}: {str(test_error)}")
+                test_results[test['name']] = False
+
+        # ارزیابی نهایی
+        all_tests_passed = all(test_results.values())
+        
+        logging.info("\n📊 نتیجه نهایی:")
+        for test_name, result in test_results.items():
+            logging.info(f"{test_name}: {'✅ موفق' if result else '❌ ناموفق'}")
+        
+        return all_tests_passed, test_results
+
+    except Exception as e:
+        logging.error(f"❌ خطای کلی: {str(e)}")
+        return False, {}
+
 @bot.message_handler(func=lambda message: message.text == '🌐 تست اتصال به سایت')
 @error_handler
 def test_site_connection(message):
@@ -359,59 +457,37 @@ def test_site_connection(message):
         return
     
     # ارسال پیام در حال تست
-    status_message = bot.reply_to(message, "🔍 در حال تست اتصال به سایت...")
+    status_message = bot.reply_to(message, "🔍 در حال تست جامع اتصال...")
 
     try:
-        # ایجاد اتصال به WooCommerce API
-        wcapi = API(
-            url=user.site_url,
-            consumer_key=user.consumer_key,
-            consumer_secret=user.consumer_secret,
-            version="wc/v3",
-            timeout=30
-        )
+        # اجرای تست جامع
+        all_passed, test_results = comprehensive_woocommerce_test(user)
+
+        # متن گزارش
+        report_text = "🌐 گزارش تست اتصال به سایت:\n\n"
+        for test_name, result in test_results.items():
+            report_text += f"{'✅' if result else '❌'} {test_name}\n"
         
-        # تست درخواست محصولات
-        response = wcapi.get("products", params={'per_page': 1})
-        
-        # بررسی وضعیت اتصال
-        if response.status_code in [200, 201]:
-            # دریافت تعداد کل محصولات
-            total_products = int(response.headers.get('X-WP-Total', 0))
-            
-            # به‌روزرسانی پیام
+        # به‌روزرسانی پیام
+        if all_passed:
             bot.edit_message_text(
                 chat_id=chat_id, 
                 message_id=status_message.message_id,
-                text=(
-                    "✅ اتصال به سایت با موفقیت برقرار شد!\n"
-                    f"📦 تعداد کل محصولات: {total_products}"
-                )
+                text=f"✅ تست اتصال کامل موفق بود!\n\n{report_text}"
             )
         else:
-            # خطا در اتصال
             bot.edit_message_text(
                 chat_id=chat_id, 
                 message_id=status_message.message_id,
-                text=(
-                    "❌ خطا در اتصال به سایت\n"
-                    f"کد وضعیت: {response.status_code}\n"
-                    f"پیام خطا: {response.text}"
-                )
+                text=f"⚠️ برخی تست‌ها ناموفق بودند.\n\n{report_text}"
             )
     
     except Exception as e:
-        # خطای کلی
         bot.edit_message_text(
             chat_id=chat_id, 
             message_id=status_message.message_id,
-            text=(
-                "❌ خطای کلی در اتصال به سایت\n"
-                f"جزئیات خطا: {str(e)}"
-            )
+            text=f"❌ خطای کلی در تست اتصال: {str(e)}"
         )
-
-# اضافه کردن دکمه به منو
 
 # اتصال به سایت
 @bot.message_handler(func=lambda message: message.text == '🌐 اتصال به سایت')
