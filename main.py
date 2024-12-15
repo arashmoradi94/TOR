@@ -8,7 +8,7 @@ from flask import Flask, request
 import telebot
 from telebot import TeleBot
 import pymysql
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float
 from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime
 import hashlib
