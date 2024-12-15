@@ -305,7 +305,7 @@ def handle_contact(message, first_name=None, last_name=None):
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.row('👤 پروفایل', '🌐 اتصال به سایت')
         markup.row('📦 دریافت محصولات', '🛍️ محصولات')
-        markup.row('❓ راهنما')
+        markup.row('🌐 تست اتصال به سایت', '❓ راهنما')
         
         bot.reply_to(
             message, 
@@ -344,6 +344,74 @@ def show_profile(message):
         bot.reply_to(message, "❌ اطلاعات پروفایل شما موجود نیست.")
     
     session.close()
+@bot.message_handler(func=lambda message: message.text == '🌐 تست اتصال به سایت')
+@error_handler
+def test_site_connection(message):
+    chat_id = message.chat.id
+    
+    # بررسی اطلاعات کاربر
+    session = Session()
+    user = session.query(User).filter_by(chat_id=chat_id).first()
+    session.close()
+    
+    if not user or not all([user.site_url, user.consumer_key, user.consumer_secret]):
+        bot.reply_to(message, "❌ ابتدا اطلاعات اتصال به سایت را کامل کنید.")
+        return
+    
+    # ارسال پیام در حال تست
+    status_message = bot.reply_to(message, "🔍 در حال تست اتصال به سایت...")
+
+    try:
+        # ایجاد اتصال به WooCommerce API
+        wcapi = API(
+            url=user.site_url,
+            consumer_key=user.consumer_key,
+            consumer_secret=user.consumer_secret,
+            version="wc/v3",
+            timeout=30
+        )
+        
+        # تست درخواست محصولات
+        response = wcapi.get("products", params={'per_page': 1})
+        
+        # بررسی وضعیت اتصال
+        if response.status_code in [200, 201]:
+            # دریافت تعداد کل محصولات
+            total_products = int(response.headers.get('X-WP-Total', 0))
+            
+            # به‌روزرسانی پیام
+            bot.edit_message_text(
+                chat_id=chat_id, 
+                message_id=status_message.message_id,
+                text=(
+                    "✅ اتصال به سایت با موفقیت برقرار شد!\n"
+                    f"📦 تعداد کل محصولات: {total_products}"
+                )
+            )
+        else:
+            # خطا در اتصال
+            bot.edit_message_text(
+                chat_id=chat_id, 
+                message_id=status_message.message_id,
+                text=(
+                    "❌ خطا در اتصال به سایت\n"
+                    f"کد وضعیت: {response.status_code}\n"
+                    f"پیام خطا: {response.text}"
+                )
+            )
+    
+    except Exception as e:
+        # خطای کلی
+        bot.edit_message_text(
+            chat_id=chat_id, 
+            message_id=status_message.message_id,
+            text=(
+                "❌ خطای کلی در اتصال به سایت\n"
+                f"جزئیات خطا: {str(e)}"
+            )
+        )
+
+# اضافه کردن دکمه به منو
 
 # اتصال به سایت
 @bot.message_handler(func=lambda message: message.text == '🌐 اتصال به سایت')
@@ -578,12 +646,11 @@ def delete_product(message, product):
     else:
         bot.reply_to(message, "🔙 بازگشت به منوی اصلی.", reply_markup=main_menu_markup())
 
-# اضافه کردن تابع main_menu_markup
 def main_menu_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row('👤 پروفایل', '🌐 اتصال به سایت')
     markup.row('📦 دریافت محصولات', '🛍️ محصولات')
-    markup.row('❓ راهنما')
+    markup.row('🌐 تست اتصال به سایت', '❓ راهنما')
     return markup
 
 @app.route('/' + TOKEN, methods=['POST'])
