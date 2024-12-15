@@ -298,9 +298,18 @@ def save_consumer_secret(message):
     
     session.close()
 
-# دریافت محصولات
-import pandas as pd
-from io import BytesIO
+# تعریف مدل Product
+class Product(Base):
+    __tablename__ = 'products'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False)
+    price = Column(Integer, nullable=False)
+    stock = Column(Integer, nullable=False)
+    info = Column(Text)
+    
+# ایجاد جداول
+Base.metadata.create_all(engine)
 
 @bot.message_handler(func=lambda message: message.text == '📦 دریافت محصولات')
 @error_handler
@@ -319,37 +328,41 @@ def export_products_to_excel(message):
     # نمایش پیام در حال دریافت محصولات
     bot.reply_to(message, "📊 در حال دریافت محصولات...")
 
-    # فرض می‌کنیم که مدل Product به درستی تعریف شده است
-    products = session.query(Product).all()
-    session.close()  # بستن سشن دیتابیس
-
-    if not products:
-        bot.reply_to(message, "❌ هیچ محصولی در سیستم موجود نیست.")
-        return
+    try:
+        # حالا می‌توانیم از مدل Product برای دریافت محصولات استفاده کنیم
+        products = session.query(Product).all()
+        
+        if not products:
+            bot.reply_to(message, "❌ هیچ محصولی در سیستم موجود نیست.")
+            return
+        
+        # ساخت داده‌ها برای تبدیل به DataFrame
+        product_data = []
+        for product in products:
+            product_data.append({
+                "شناسه محصول": product.id,
+                "نام محصول": product.name,
+                "قیمت": product.price,
+                "موجودی": product.stock,
+                "اطلاعات": product.info,
+            })
+        
+        # تبدیل داده‌ها به DataFrame
+        df = pd.DataFrame(product_data)
+        
+        # ایجاد فایل Excel در حافظه
+        excel_file = BytesIO()
+        df.to_excel(excel_file, index=False, engine='openpyxl')
+        excel_file.seek(0)  # بازگشت به ابتدای فایل برای ارسال
+        
+        # ارسال فایل به کاربر
+        bot.send_document(chat_id, excel_file, caption="📊 لیست محصولات")
     
-    # ساخت داده‌ها برای تبدیل به DataFrame
-    product_data = []
-    for product in products:
-        product_data.append({
-            "شناسه محصول": product.id,
-            "نام محصول": product.name,
-            "قیمت": product.price,
-            "موجودی": product.stock,
-            "اطلاعات": product.info,
-        })
-    
-    # تبدیل داده‌ها به DataFrame
-    df = pd.DataFrame(product_data)
-    
-    # ایجاد فایل Excel در حافظه
-    excel_file = BytesIO()
-    df.to_excel(excel_file, index=False, engine='openpyxl')
-    excel_file.seek(0)  # بازگشت به ابتدای فایل برای ارسال
-    
-    # ارسال فایل به کاربر
-    bot.send_document(chat_id, excel_file, caption="📊 لیست محصولات")
-
-
+    except Exception as e:
+        # مدیریت خطا
+        bot.reply_to(message, f"❌ خطا در دریافت محصولات: {str(e)}")
+    finally:
+        session.close()  # بستن سشن دیتابیس
 
 
 # راهنمای ربات
