@@ -539,11 +539,11 @@ def detailed_fetch_products(user, limit=100, page=1):
 
 # تابع سینک محصولات با جزئیات بیشتر
 def sync_products(user):
-    # دریافت محصولات با جزئیات
-    products = detailed_fetch_products(user)
+    # دریافت محصولات با جزئیات کامل
+    products = comprehensive_product_fetch(user)
     
     if not products:
-        logging.warning("هیچ محصولی یافت نشد")
+        logging.warning("⚠️ هیچ محصولی دریافت نشد")
         return 0
     
     # ایجاد سشن دیتابیس
@@ -555,25 +555,46 @@ def sync_products(user):
         
         # ذخیره محصولات جدید
         for product_data in products:
+            # مدیریت قیمت‌های خالی یا نامعتبر
+            price = product_data.get('price')
+            try:
+                price = float(price) if price and price != '' else 0.0
+            except (ValueError, TypeError):
+                price = 0.0
+            
+            # مدیریت موجودی
+            stock_quantity = product_data.get('stock_quantity')
+            try:
+                stock_quantity = int(stock_quantity) if stock_quantity and stock_quantity != '' else 0
+            except (ValueError, TypeError):
+                stock_quantity = 0
+            
             new_product = Product(
                 woo_id=product_data.get('id'),
                 name=product_data.get('name', ''),
-                price=float(product_data.get('price', 0)),
-                stock_quantity=product_data.get('stock_quantity', 0),
+                price=price,
+                stock_quantity=stock_quantity,
                 sku=product_data.get('sku', ''),
                 description=product_data.get('description', '')
             )
+            
+            # چاپ اطلاعات محصول برای بررسی
+            logging.info(f"محصول: {new_product.name}")
+            logging.info(f"قیمت: {new_product.price}")
+            logging.info(f"موجودی: {new_product.stock_quantity}")
+            
             session.add(new_product)
         
         # کامیت تغییرات
         session.commit()
-        logging.info(f"تعداد {len(products)} محصول با موفقیت ذخیره شد")
+        logging.info(f"✅ تعداد {len(products)} محصول با موفقیت ذخیره شد")
         
         return len(products)
     
     except Exception as e:
         session.rollback()
-        logging.error(f"خطا در ذخیره‌سازی محصولات: {str(e)}")
+        logging.error(f"❌ خطا در ذخیره‌سازی محصولات: {str(e)}")
+        logging.error(traceback.format_exc())
         return 0
     finally:
         session.close()
@@ -584,9 +605,6 @@ from woocommerce import API
 import traceback
 
 def comprehensive_product_fetch(user, limit=100, page=1):
-    """
-    تابع جامع برای دریافت محصولات با اطلاعات کامل و خطایابی دقیق
-    """
     try:
         # تنظیمات اتصال با اطلاعات کامل
         wcapi = API(
@@ -599,33 +617,11 @@ def comprehensive_product_fetch(user, limit=100, page=1):
         
         # پارامترهای مختلف برای درخواست
         params_list = [
-            # حالت اول: بدون فیلتر
-            {},
-            
-            # حالت دوم: با محدودیت و صفحه
-            {
-                'per_page': limit,
-                'page': page
-            },
-            
-            # حالت سوم: فقط محصولات منتشر شده
-            {
-                'status': 'publish',
-                'per_page': limit,
-                'page': page
-            },
-            
-            # حالت چهارم: همه وضعیت‌ها
-            {
-                'status': ['publish', 'draft', 'pending'],
-                'per_page': limit,
-                'page': page
-            }
+            {'per_page': limit, 'page': page, 'status': ['publish', 'draft', 'pending']}
         ]
         
         # لاگ‌های اولیه
         logging.info(f"🔍 شروع جستجوی محصولات در سایت: {user.site_url}")
-        logging.info(f"🔑 Consumer Key (5 کاراکتر اول): {user.consumer_key[:5]}")
         
         # بررسی هر پارامتر
         for params in params_list:
@@ -646,22 +642,30 @@ def comprehensive_product_fetch(user, limit=100, page=1):
                     # چاپ اطلاعات محصولات
                     logging.info(f"🏷️ تعداد محصولات: {len(products)}")
                     
+                    # فیلتر محصولات با اطلاعات کامل
+                    filtered_products = []
                     for product in products:
+                        # چاپ اطلاعات کامل محصول
                         logging.info(f"📦 محصول: {product.get('name', 'بدون نام')}")
                         logging.info(f"🆔 شناسه: {product.get('id')}")
                         logging.info(f"📊 وضعیت: {product.get('status')}")
-                        logging.info(f"💰 قیمت: {product.get('price')}")
-                        logging.info("---")
+                        
+                        # مدیریت قیمت
+                        price = product.get('price')
+                        logging.info(f"💰 قیمت اولیه: {price}")
+                        
+                        # اضافه کردن محصولات با اطلاعات معتبر
+                        filtered_products.append(product)
                     
                     # اگر محصول پیدا شد، برگردان
-                    if products:
-                        return products
+                    if filtered_products:
+                        return filtered_products
                 
                 else:
                     logging.error(f"❌ خطا در درخواست: {response.text}")
             
             except Exception as param_error:
-                logging.error(f"❌ خطا با پارامترهای {params}: {str(param_error)}")
+                logging.error(f"❌ خطا با پارامترها: {str(param_error)}")
                 logging.error(traceback.format_exc())
         
         # اگر هیچ محصولی پیدا نشد
@@ -672,50 +676,6 @@ def comprehensive_product_fetch(user, limit=100, page=1):
         logging.error(f"❌ خطای کلی: {str(e)}")
         logging.error(traceback.format_exc())
         return []
-
-def sync_products(user):
-    """
-    همگام‌سازی محصولات با اطلاعات کامل
-    """
-    # دریافت محصولات با جزئیات کامل
-    products = comprehensive_product_fetch(user)
-    
-    if not products:
-        logging.warning("⚠️ هیچ محصولی دریافت نشد")
-        return 0
-    
-    # ایجاد سشن دیتابیس
-    session = Session()
-    
-    try:
-        # حذف محصولات قبلی
-        session.query(Product).delete()
-        
-        # ذخیره محصولات جدید
-        for product_data in products:
-            new_product = Product(
-                woo_id=product_data.get('id'),
-                name=product_data.get('name', ''),
-                price=float(product_data.get('price', 0)),
-                stock_quantity=product_data.get('stock_quantity', 0),
-                sku=product_data.get('sku', ''),
-                description=product_data.get('description', '')
-            )
-            session.add(new_product)
-        
-        # کامیت تغییرات
-        session.commit()
-        logging.info(f"✅ تعداد {len(products)} محصول با موفقیت ذخیره شد")
-        
-        return len(products)
-    
-    except Exception as e:
-        session.rollback()
-        logging.error(f"❌ خطا در ذخیره‌سازی محصولات: {str(e)}")
-        logging.error(traceback.format_exc())
-        return 0
-    finally:
-        session.close()
 
 # هندلر دریافت محصولات
 @bot.message_handler(func=lambda message: message.text == '📦 دریافت اکسل محصولات')
@@ -772,6 +732,8 @@ def export_products_to_excel(message):
         bot.reply_to(status_message, "❌ خطا در دریافت محصولات.")
         logging.error(f"❌ خطا در دریافت محصولات: {str(e)}")
         logging.error(traceback.format_exc())
+
+
 # راهنمای ربات
 @bot.message_handler(func=lambda message: message.text == '❓ راهنما')
 @error_handler
