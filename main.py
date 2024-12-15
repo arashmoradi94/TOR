@@ -771,7 +771,6 @@ def export_products_to_excel(message):
     except Exception as e:
         bot.reply_to(status_message, "❌ خطا در دریافت محصولات.")
         logging.error(f"❌ خطا در دریافت محصولات: {str(e)}")
- ```python
         logging.error(traceback.format_exc())
 # راهنمای ربات
 @bot.message_handler(func=lambda message: message.text == '❓ راهنما')
