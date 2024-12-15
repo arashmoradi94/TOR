@@ -8,7 +8,7 @@ from flask import Flask, request
 import telebot
 from telebot import TeleBot
 import pymysql
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float, BigInteger
 from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime
 import hashlib
@@ -161,19 +161,18 @@ def sync_all_products(user):
 class User(Base):
     __tablename__ = 'users'
     
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    chat_id = Column(Integer, unique=True, nullable=False)
-    username = Column(String(100))
-    first_name = Column(String(100))
-    last_name = Column(String(100))
-    phone_number = Column(String(20))
-    site_url = Column(String(255))
-    consumer_key = Column(Text)
-    consumer_secret = Column(Text)
+    # تغییر نوع داده به BigInteger
+    chat_id = Column(BigInteger, primary_key=True)
+    username = Column(String(255), nullable=True)
+    first_name = Column(String(255), nullable=True)
+    last_name = Column(String(255), nullable=True)
+    phone_number = Column(String(20), nullable=True)
+    site_url = Column(String(500), nullable=True)
+    consumer_key = Column(String(255), nullable=True)
+    consumer_secret = Column(String(255), nullable=True)
     registration_date = Column(DateTime, default=datetime.now)
-    last_activity = Column(DateTime, default=datetime.now)
-    status = Column(String(20), default='active')
-
+    last_activity = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    status = Column(String(50), default='active')
 # ایجاد جداول
 Base.metadata.create_all(engine)
 
