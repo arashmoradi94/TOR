@@ -681,108 +681,6 @@ import logging
 from woocommerce import API
 import traceback
 
-def fetch_woocommerce_products(user, max_products=1000):
-    """
-    دریافت محصولات از WooCommerce با مدیریت صفحات
-    """
-    all_products = []
-    page = 1
-    total_pages = 1
-
-    try:
-        # ایجاد اتصال API
-        wcapi = API(
-            url=user.site_url,
-            consumer_key=user.consumer_key,
-            consumer_secret=user.consumer_secret,
-            version="wc/v3",
-            timeout=30
-        )
-
-        # پارامترهای درخواست
-        params = {
-            'per_page': 100,  # حداکثر محصولات در هر درخواست
-            'page': page,
-            'status': ['publish', 'draft', 'pending'],
-            'orderby': 'date',
-            'order': 'desc'
-        }
-
-        while page <= total_pages and len(all_products) < max_products:
-            response = wcapi.get("products", params=params)
-
-            if response.status_code not in [200, 201]:
-                logging.error(f"خطا در دریافت محصولات: {response.text}")
-                break
-
-            products = response.json()
-            
-            # اضافه کردن محصولات
-            all_products.extend(products)
-
-            # به‌روزرسانی تعداد صفحات
-            total_pages = int(response.headers.get('X-WP-TotalPages', 1))
-            page += 1
-            params['page'] = page
-
-        return all_products
-
-    except Exception as e:
-        logging.error(f"خطای کلی در دریافت محصولات: {str(e)}")
-        return []
-
-def prepare_product_data(products):
-    """
-    آماده‌سازی داده‌های محصولات برای اکسل
-    """
-    product_data = []
-
-    for product in products:
-        try:
-            # مدیریت قیمت
-            price = float(product.get('price', 0)) if product.get('price') else 0.0
-            
-            # مدیریت موجودی
-            stock = int(product.get('stock_quantity', 0)) if product.get('stock_quantity') else 0
-            
-            # دسته‌بندی‌ها
-            categories = [cat.get('name', '') for cat in product.get('categories', [])]
-            
-            # تگ‌ها
-            tags = [tag.get('name', '') for tag in product.get('tags', [])]
-
-            product_entry = {
-                "شناسه محصول": product.get('id', ''),
-                "نام محصول": product.get('name', ''),
-                "قیمت": price,
-                "موجودی انبار": stock,
-                "کد محصول (SKU)": product.get('sku', ''),
-                "وضعیت": product.get('status', ''),
-                "نوع محصول": product.get('type', ''),
-                "دسته‌بندی‌ها": ' | '.join(categories),
-                "تگ‌ها": ' | '.join(tags),
-                "لینک محصول": product.get('permalink', ''),
-                "توضیحات کوتاه": strip_html_tags(product.get('short_description', '')),
-                "وزن": f"{product.get('weight', '')} {product.get('weight_unit', '')}",
-                "ابعاد": f"{product.get('dimensions', {}).get('length', '')} × {product.get('dimensions', {}).get('width', '')} × {product.get('dimensions', {}).get('height', '')}",
-            }
-            
-            product_data.append(product_entry)
-        
-        except Exception as product_error:
-            logging.error(f"خطا در پردازش محصول: {str(product_error)}")
-
-    return product_data
-
-def strip_html_tags(text):
-    """
-    حذف تگ‌های HTML از متن
-    """
-    if text:
-        clean = re.compile('<.*?>')
-        return re.sub(clean, '', text)
-    return ''
-
 @bot.message_handler(func=lambda message: message.text == '📦 دریافت اکسل محصولات')
 def export_products_to_excel(message):
     chat_id = message.chat.id
@@ -820,22 +718,76 @@ def export_products_to_excel(message):
             # نام فایل با تاریخ و زمان
             excel_filename = f"products_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
             
-            # ذخیره اکسل
-            df.to_excel(excel_filename, index=False, encoding='utf-8')
-
-            # ارسال فایل
-            with open(excel_filename, 'rb') as excel_file:
-                bot.send_document(
+            # ذخیره اکسل با مدیریت خطا
+            try:
+                df.to_excel(excel_filename, index=False, encoding='utf-8')
+            except Exception as excel_error:
+                bot.edit_message_text(
                     chat_id=chat_id, 
-                    document=excel_file, 
-                    caption=f"📊 فایل اکسل محصولات ({len(products)} محصول)"
+                    message_id=status_message.message_id,
+                    text=f"❌ خطا در ایجاد فایل اکسل: {str(excel_error)}"
                 )
+                logging.error(f"خطا در ایجاد فایل اکسل: {str(excel_error)}")
+                return
+
+            # بررسی وجود فایل
+            if not os.path.exists(excel_filename):
+                bot.edit_message_text(
+                    chat_id=chat_id, 
+                    message_id=status_message.message_id,
+                    text="❌ فایل اکسل ایجاد نشد."
+                )
+                return
+
+            # ارسال فایل با مدیریت خطا
+            try:
+                with open(excel_filename, 'rb') as excel_file:
+                    # استفاده از send_document با پارامترهای کامل
+                    sent_file = bot.send_document(
+                        chat_id=chat_id, 
+                        document=excel_file, 
+                        caption=f"📊 فایل اکسل محصولات ({len(products)} محصول)",
+                        timeout=60  # افزایش زمان انتظار
+                    )
+                
+                # بررسی ارسال موفق فایل
+                if not sent_file:
+                    bot.edit_message_text(
+                        chat_id=chat_id, 
+                        message_id=status_message.message_id,
+                        text="❌ خطا در ارسال فایل اکسل."
+                    )
+                    return
+
+            except telebot.apihelper.ApiException as api_error:
+                bot.edit_message_text(
+                    chat_id=chat_id, 
+                    message_id=status_message.message_id,
+                    text=f"❌ خطای Telegram در ارسال فایل: {str(api_error)}"
+                )
+                logging.error(f"خطای Telegram: {str(api_error)}")
+                return
+            
+            except Exception as send_error:
+                bot.edit_message_text(
+                    chat_id=chat_id, 
+                    message_id=status_message.message_id,
+                    text=f"❌ خطا در ارسال فایل: {str(send_error)}"
+                )
+                logging.error(f"خطا در ارسال فایل: {str(send_error)}")
+                return
 
             # حذف فایل
-            os.remove(excel_filename)
+            try:
+                os.remove(excel_filename)
+            except Exception as remove_error:
+                logging.warning(f"خطا در حذف فایل: {str(remove_error)}")
 
             # حذف پیام وضعیت
-            bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
+            try:
+                bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
+            except:
+                pass
 
         except Exception as export_error:
             bot.edit_message_text(
@@ -851,6 +803,111 @@ def export_products_to_excel(message):
     
     finally:
         session.close()
+
+def fetch_woocommerce_products(user, max_products=1000):
+    """
+    دریافت محصولات از WooCommerce با مدیریت صفحات
+    """
+    all_products = []
+    page = 1
+    total_pages = 1
+
+    try:
+        # ایجاد اتصال API
+        wcapi = API(
+            url=user.site_url,
+            consumer_key=user.consumer_key,
+            consumer_secret=user.consumer_secret,
+            version="wc/v3",
+            timeout=30
+        )
+
+        # پارامترهای درخواست
+        params = {
+            'per_page': 100,  # حداکثر محصولات در هر درخواست
+            'page': page,
+            'status': ['publish', 'draft', 'pending'],
+            'orderby': 'date',
+            'order': 'desc'
+        }
+
+        logging.info(f"🔍 شروع دریافت محصولات از {user.site_url}")
+
+        while page <= total_pages and len(all_products) < max_products:
+            logging.info(f"📡 درخواست صفحه {page}")
+
+            response = wcapi.get("products", params=params)
+
+            if response.status_code not in [200, 201]:
+                logging.error(f"خطا در دریافت محصولات: {response.text}")
+                break
+
+            products = response.json()
+            
+            if not products:
+                logging.warning("⚠️ صفحه خالی دریافت شد")
+                break
+
+            # اضافه کردن محصولات
+            all_products.extend(products)
+
+            # به‌روزرسانی تعداد صفحات
+            total_pages = int(response.headers.get('X-WP-TotalPages', 1))
+            logging.info(f"تعداد کل صفحات: {total_pages} - محصولات دریافت شده: {len(all_products)}")
+            page += 1
+            params['page'] = page
+
+        return all_products
+
+    except Exception as e:
+        logging.error(f"خطای کلی در دریافت محصولات: {str(e)}")
+        return []
+
+def prepare_product_data(products):
+    """
+    آماده‌سازی داده‌های محصولات برای اکسل
+    """
+    product_data = []
+
+    for product in products:
+        try:
+            # مدیریت قیمت
+            price = float(product.get('price', 0)) if product.get('price') else 0.0
+            
+            # مدیریت موجودی
+            stock = int(product.get('stock_quantity', 0)) if product.get('stock_quantity') else 0
+            
+            # دسته‌بندی‌ها
+            categories = [cat.get('name', '') for cat in product.get('categories', [])]
+            
+            # تگ‌ها
+            tags = [tag.get('name', '') for tag in product.get('tags', [])]
+
+            product_entry = {
+                "شناسه محصول": product.get('id', ''),
+                "نام محصول": product.get('name', ''),
+                "قیمت": price,
+                "موجودی انبار": stock,
+                "کد محصول (SKU)": product.get('sku', ''),
+                "وضعیت": product.get('status', ''),
+                "لینک محصول": product.get('permalink', ''),
+            }
+            
+            product_data.append(product_entry)
+        
+        except Exception as product_error:
+            logging.error(f"خطا در پردازش محصول: {str(product_error)}")
+
+    return product_data
+
+def strip_html_tags(text):
+    """
+    حذف تگ‌های HTML از متن
+    """
+    if text:
+        clean = re.compile('<.*?>')
+        return re.sub(clean, '', text)
+    return ''
 # راهنمای ربات
 @bot.message_handler(func=lambda message: message.text == '❓ راهنما')
 @error_handler
