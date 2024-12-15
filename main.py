@@ -9,7 +9,7 @@ import telebot
 from telebot import TeleBot
 import pymysql
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float, BigInteger
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker, declarative_base, scoped_session
 from datetime import datetime
 import hashlib
 from telebot import types
