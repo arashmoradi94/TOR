@@ -15,6 +15,7 @@ import hashlib
 from telebot import types
 import pandas as pd
 from io import BytesIO
+from woocommerce import API
 
 pymysql.install_as_MySQLdb() 
 
@@ -48,6 +49,113 @@ Base = declarative_base()
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 Session = sessionmaker(bind=engine)
 
+
+
+# مدل محصول ساده
+class Product(Base):
+    __tablename__ = 'products'
+    
+    id = Column(Integer, primary_key=True)
+    woo_id = Column(Integer, unique=True)  # شناسه محصول در ووکامرس
+    name = Column(String(255), nullable=False)
+    price = Column(Float, default=0.0)
+    stock_quantity = Column(Integer, default=0)
+    sku = Column(String(100))  # کد محصول
+    description = Column(Text)
+    created_at = Column(DateTime, default=datetime.now)
+
+def fetch_products_from_woocommerce(user, limit=100, page=1):
+    """
+    دریافت محصولات از WooCommerce با اطلاعات پایه
+    
+    :param user: کاربر با اطلاعات اتصال به سایت
+    :param limit: تعداد محصولات در هر درخواست
+    :param page: شماره صفحه
+    :return: True اگر موفق، False در غیر این صورت
+    """
+    try:
+        # ایجاد اتصال به WooCommerce API
+        wcapi = API(
+            url=user.site_url,
+            consumer_key=user.consumer_key,
+            consumer_secret=user.consumer_secret,
+            version="wc/v3",
+            timeout=30  # تایم‌اوت 30 ثانیه
+        )
+
+        # پارامترهای درخواست
+        params = {
+            'per_page': limit,
+            'page': page,
+            'status': 'publish',  # فقط محصولات منتشر شده
+            'orderby': 'date',
+            'order': 'desc'
+        }
+
+        # دریافت محصولات
+        response = wcapi.get("products", params=params)
+        
+        # بررسی وضعیت پاسخ
+        if response.status_code != 200:
+            logging.error(f"خطا در دریافت محصولات: {response.text}")
+            return False
+
+        products = response.json()
+
+        # ایجاد سشن دیتابیس
+        Session = sessionmaker(bind=engine)
+        session = Session()
+
+        try:
+            # حذف محصولات قبلی
+            session.query(Product).delete()
+
+            # ذخیره محصولات جدید
+            for product_data in products:
+                new_product = Product(
+                    woo_id=product_data.get('id'),
+                    name=product_data.get('name', ''),
+                    price=float(product_data.get('price', 0)),
+                    stock_quantity=product_data.get('stock_quantity', 0),
+                    sku=product_data.get('sku', ''),
+                    description=product_data.get('description', '')
+                )
+                session.add(new_product)
+
+            # کامیت تغییرات
+            session.commit()
+            logging.info(f"تعداد {len(products)} محصول با موفقیت دریافت و ذخیره شد.")
+            
+            return True
+
+        except Exception as db_error:
+            session.rollback()
+            logging.error(f"خطا در ذخیره‌سازی محصولات: {str(db_error)}")
+            return False
+
+        finally:
+            session.close()
+
+    except Exception as api_error:
+        logging.error(f"خطا در اتصال به WooCommerce API: {str(api_error)}")
+        return False
+
+# تابع همگام‌سازی تمام محصولات
+def sync_all_products(user):
+    """
+    همگام‌سازی تمام محصولات با پشتیبانی از صفحه‌بندی
+    """
+    page = 1
+    total_products = 0
+    
+    while True:
+        success = fetch_products_from_woocommerce(user, page=page)
+        if not success:
+            break
+        total_products += len(products)
+        page += 1
+    
+    return total_products
 
 # مدل کاربر
 class User(Base):
@@ -303,59 +411,52 @@ def save_consumer_secret(message):
 def export_products_to_excel(message):
     chat_id = message.chat.id
 
-    # ابتدا بررسی می‌کنیم که کاربر اطلاعات اتصال به سایت را وارد کرده باشد
+    # بررسی اطلاعات اتصال کاربر
     session = Session()
     user = session.query(User).filter_by(chat_id=chat_id).first()
     
     if not user or not all([user.site_url, user.consumer_key, user.consumer_secret]):
         bot.reply_to(message, "❌ ابتدا اطلاعات اتصال به سایت را وارد کنید.")
-        session.close()  # بستن سشن دیتابیس
-        return
-
-    # دریافت محصولات از WooCommerce و ذخیره آنها در دیتابیس
-    success = fetch_products_from_woocommerce(user)
-    if not success:
-        bot.reply_to(message, "❌ خطا در دریافت محصولات از سایت.")
+        session.close()
         return
 
     # نمایش پیام در حال دریافت محصولات
     bot.reply_to(message, "📊 در حال دریافت محصولات...")
 
-    try:
-        # حالا می‌توانیم از مدل Product برای دریافت محصولات استفاده کنیم
+    # دریافت محصولات
+    total_products = sync_all_products(user)
+
+    if total_products > 0:
+        # دریافت محصولات از دیتابیس
         products = session.query(Product).all()
         
-        if not products:
-            bot.reply_to(message, "❌ هیچ محصولی در سیستم موجود نیست.")
-            return
+        # تبدیل به DataFrame
+        product_data = [{
+            "شناسه": p.woo_id,
+            "نام محصول": p.name,
+            "قیمت": p.price,
+            "موجودی": p.stock_quantity,
+            "کد محصول": p.sku,
+            "توضیحات": p.description
+        } for p in products]
         
-        # ساخت داده‌ها برای تبدیل به DataFrame
-        product_data = []
-        for product in products:
-            product_data.append({
-                "شناسه محصول": product.id,
-                "نام محصول": product.name,
-                "قیمت": product.price,
-                "موجودی": product.stock,
-                "اطلاعات": product.info,
-            })
-        
-        # تبدیل داده‌ها به DataFrame
         df = pd.DataFrame(product_data)
         
-        # ایجاد فایل Excel در حافظه
+        # ایجاد فایل اکسل
         excel_file = BytesIO()
         df.to_excel(excel_file, index=False, engine='openpyxl')
-        excel_file.seek(0)  # بازگشت به ابتدای فایل برای ارسال
+        excel_file.seek(0)
         
-        # ارسال فایل به کاربر
-        bot.send_document(chat_id, excel_file, caption="📊 لیست محصولات")
-    
-    except Exception as e:
-        # مدیریت خطا
-        bot.reply_to(message, f"❌ خطا در دریافت محصولات: {str(e)}")
-    finally:
-        session.close()  # بستن سشن دیتابیس
+        # ارسال فایل
+        bot.send_document(
+            chat_id, 
+            excel_file, 
+            caption=f"📊 لیست {total_products} محصول"
+        )
+    else:
+        bot.reply_to(message, "❌ هیچ محصولی دریافت نشد.")
+
+    session.close()
 
 
 # راهنمای ربات
