@@ -44,18 +44,85 @@ if not all([TOKEN, MYSQL_USER, MYSQL_PASSWORD, MYSQL_HOST, MYSQL_PORT, MYSQL_DAT
 # ساخت آدرس اتصال به دیتابیس MySQL
 DATABASE_URL = os.getenv('MYSQL_URL')
 
-# تنظیمات SQLAlchemy
-Base = declarative_base()
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-     connect_args={
-        'charset': 'utf8mb4',  # پشتیبانی از یونیکد
-        'use_unicode': True
-    },
-    pool_size=10,  # تعداد اتصالات همزمان
-    max_overflow=20  # حداکثر اتصالات اضافی
-)
-Session = sessionmaker(bind=engine)
+from sqlalchemy.pool import QueuePool
 
+# تنظیمات پیشرفته برای اتصال
+engine = create_engine(
+    DATABASE_URL, 
+    poolclass=QueuePool,
+    pool_size=10,            # تعداد اتصالات ثابت در پول
+    max_overflow=20,         # تعداد اتصالات اضافی مجاز
+    pool_timeout=30,         # زمان انتظار برای دریافت اتصال
+    pool_recycle=1200,       # بازسازی اتصال هر 20 دقیقه
+    pool_pre_ping=True,      # بررسی سلامت اتصال قبل از استفاده
+    connect_args={
+        'charset': 'utf8mb4',
+        'use_unicode': True
+    }
+)
+
+# ایجاد جلسه با scoped_session برای مدیریت بهتر
+Session = scoped_session(sessionmaker(bind=engine))
+
+# پایه مدل‌ها
+Base = declarative_base()
+
+# تابع کمکی برای مدیریت جلسات
+def get_session():
+    """
+    ایجاد و بازگرداندن جلسه جدید
+    """
+    return Session()
+
+def close_session():
+    """
+    بستن تمام جلسات باز
+    """
+    Session.remove()
+
+# تابع تست اتصال
+def test_database_connection():
+    try:
+        session = get_session()
+        
+        # کوئری تست
+        result = session.execute("SELECT 1")
+        
+        session.close()
+        print("✅ اتصال به پایگاه داده موفقیت‌آمیز بود")
+        return True
+    
+    except Exception as e:
+        print(f"❌ خطا در اتصال به پایگاه داده: {str(e)}")
+        return False
+
+# کانتکست منیجر برای مدیریت جلسات
+from contextlib import contextmanager
+
+@contextmanager
+def session_scope():
+    """
+    مدیریت جلسات با استفاده از کانتکست منیجر
+    """
+    session = get_session()
+    try:
+        yield session
+        session.commit()
+    except:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+# مثال استفاده از کانتکست منیجر
+def example_usage():
+    try:
+        with session_scope() as session:
+            # عملیات مورد نظر
+            result = session.query(User).filter_by(username='example').first()
+            # انجام عملیات
+    except Exception as e:
+        print(f"خطا: {str(e)}")
 
 
 # مدل محصول ساده
