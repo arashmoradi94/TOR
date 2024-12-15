@@ -47,6 +47,13 @@ DATABASE_URL = os.getenv('MYSQL_URL')
 # تنظیمات SQLAlchemy
 Base = declarative_base()
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+     connect_args={
+        'charset': 'utf8mb4',  # پشتیبانی از یونیکد
+        'use_unicode': True
+    },
+    pool_size=10,  # تعداد اتصالات همزمان
+    max_overflow=20  # حداکثر اتصالات اضافی
+)
 Session = sessionmaker(bind=engine)
 
 
@@ -158,21 +165,30 @@ def sync_all_products(user):
     return total_products
 
 # مدل کاربر
+Base = declarative_base()
+
 class User(Base):
     __tablename__ = 'users'
-    
-    # تغییر نوع داده به BigInteger
+
+    # استفاده از BigInteger برای chat_id
     chat_id = Column(BigInteger, primary_key=True)
+    
+    # افزایش طول ستون‌ها
     username = Column(String(255), nullable=True)
     first_name = Column(String(255), nullable=True)
     last_name = Column(String(255), nullable=True)
+    
+    # تغییر طول phone_number
     phone_number = Column(String(20), nullable=True)
-    site_url = Column(String(500), nullable=True)
-    consumer_key = Column(String(255), nullable=True)
-    consumer_secret = Column(String(255), nullable=True)
+    
+    # استفاده از Text برای فیلدهای بزرگ
+    site_url = Column(Text, nullable=True)
+    consumer_key = Column(Text, nullable=True)
+    consumer_secret = Column(Text, nullable=True)
+    
     registration_date = Column(DateTime, default=datetime.now)
     last_activity = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-    status = Column(String(50), default='active')
+
 # ایجاد جداول
 Base.metadata.create_all(engine)
 
