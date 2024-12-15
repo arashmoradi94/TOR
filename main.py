@@ -474,58 +474,182 @@ def save_consumer_secret(message):
     
     session.close()
 
+def detailed_fetch_products(user, limit=100, page=1):
+    try:
+        # ایجاد اتصال به WooCommerce API
+        wcapi = API(
+            url=user.site_url,
+            consumer_key=user.consumer_key,
+            consumer_secret=user.consumer_secret,
+            version="wc/v3",
+            timeout=30
+        )
+        
+        # پارامترهای مختلف برای درخواست
+        params_list = [
+            {},  # بدون فیلتر
+            {'per_page': limit, 'page': page},
+            {'status': 'publish'},
+            {'status': 'draft'},
+            {'status': ['publish', 'draft']},
+        ]
+        
+        # لاگ کامل برای هر پارامتر
+        for params in params_list:
+            logging.info(f"\n--- تلاش با پارامترها: {params} ---")
+            
+            try:
+                # درخواست محصولات
+                response = wcapi.get("products", params=params)
+                
+                # اطلاعات کامل پاسخ
+                logging.info(f"کد وضعیت: {response.status_code}")
+                logging.info(f"هدرها: {response.headers}")
+                
+                # بررسی پاسخ
+                if response.status_code in [200, 201]:
+                    products = response.json()
+                    
+                    # چاپ اطلاعات محصولات
+                    logging.info(f"تعداد محصولات: {len(products)}")
+                    
+                    for product in products:
+                        logging.info(f"محصول: {product.get('name', 'بدون نام')}")
+                        logging.info(f"شناسه: {product.get('id')}")
+                        logging.info(f"وضعیت: {product.get('status')}")
+                        logging.info(f"قیمت: {product.get('price')}")
+                        logging.info("---")
+                    
+                    # اگر محصول پیدا شد، برگردان
+                    if products:
+                        return products
+                
+                else:
+                    logging.error(f"خطا در درخواست: {response.text}")
+            
+            except Exception as param_error:
+                logging.error(f"خطا با پارامترهای {params}: {str(param_error)}")
+        
+        # اگر هیچ محصولی پیدا نشد
+        return []
+    
+    except Exception as e:
+        logging.error(f"خطای کلی: {str(e)}")
+        return []
+
+# تابع سینک محصولات با جزئیات بیشتر
+def sync_products(user):
+    # دریافت محصولات با جزئیات
+    products = detailed_fetch_products(user)
+    
+    if not products:
+        logging.warning("هیچ محصولی یافت نشد")
+        return 0
+    
+    # ایجاد سشن دیتابیس
+    session = Session()
+    
+    try:
+        # حذف محصولات قبلی
+        session.query(Product).delete()
+        
+        # ذخیره محصولات جدید
+        for product_data in products:
+            new_product = Product(
+                woo_id=product_data.get('id'),
+                name=product_data.get('name', ''),
+                price=float(product_data.get('price', 0)),
+                stock_quantity=product_data.get('stock_quantity', 0),
+                sku=product_data.get('sku', ''),
+                description=product_data.get('description', '')
+            )
+            session.add(new_product)
+        
+        # کامیت تغییرات
+        session.commit()
+        logging.info(f"تعداد {len(products)} محصول با موفقیت ذخیره شد")
+        
+        return len(products)
+    
+    except Exception as e:
+        session.rollback()
+        logging.error(f"خطا در ذخیره‌سازی محصولات: {str(e)}")
+        return 0
+    finally:
+        session.close()
+
+# تابع دریافت محصولات در هندلر
 @bot.message_handler(func=lambda message: message.text == '📦 دریافت محصولات')
 @error_handler
 def export_products_to_excel(message):
     chat_id = message.chat.id
-
-    # بررسی اطلاعات اتصال کاربر
+    
+    # بررسی اطلاعات کاربر
     session = Session()
     user = session.query(User).filter_by(chat_id=chat_id).first()
+    session.close()
     
     if not user or not all([user.site_url, user.consumer_key, user.consumer_secret]):
-        bot.reply_to(message, "❌ ابتدا اطلاعات اتصال به سایت را وارد کنید.")
-        session.close()
+        bot.reply_to(message, "❌ ابتدا اطلاعات اتصال به سایت را کامل کنید.")
         return
-
-    # نمایش پیام در حال دریافت محصولات
-    bot.reply_to(message, "📊 در حال دریافت محصولات...")
-
-    # دریافت محصولات
-    total_products = sync_all_products(user)
-
-    if total_products > 0:
-        # دریافت محصولات از دیتابیس
-        products = session.query(Product).all()
+    
+    # ارسال پیام در حال دریافت
+    status_message = bot.reply_to(message, "📦 در حال دریافت محصولات...")
+    
+    try:
+        # سینک محصولات
+        product_count = sync_products(user)
         
-        # تبدیل به DataFrame
-        product_data = [{
-            "شناسه": p.woo_id,
-            "نام محصول": p.name,
-            "قیمت": p.price,
-            "موجودی": p.stock_quantity,
-            "کد محصول": p.sku,
-            "توضیحات": p.description
-        } for p in products]
-        
-        df = pd.DataFrame(product_data)
-        
-        # ایجاد فایل اکسل
-        excel_file = BytesIO()
-        df.to_excel(excel_file, index=False, engine='openpyxl')
-        excel_file.seek(0)
-        
-        # ارسال فایل
-        bot.send_document(
-            chat_id, 
-            excel_file, 
-            caption=f"📊 لیست {total_products} محصول"
+        if product_count > 0:
+            # بازیابی محصولات برای ایجاد اکسل
+            session = Session()
+            products = session.query(Product).all()
+            
+            # ایجاد DataFrame
+            product_data = [{
+                "شناسه": p.woo_id,
+                "نام محصول": p.name,
+                "قیمت": p.price,
+                "موجودی": p.stock_quantity,
+                "کد محصول": p.sku,
+                "توضیحات": p.description
+            } for p in products]
+            
+            df = pd.DataFrame(product_data)
+            
+            # ایجاد فایل اکسل
+            excel_file = BytesIO()
+            df.to_excel(excel_file, index=False, engine='openpyxl')
+            excel_file.seek(0)
+            
+            # ارسال فایل
+            bot.send_document(
+                chat_id, 
+                excel_file, 
+                caption=f"📊 لیست {product_count} محصول"
+            )
+            
+            # به‌روزرسانی پیام
+            bot.edit_message_text(
+                chat_id=chat_id, 
+                message_id=status_message.message_id,
+                text=f"✅ {product_count} محصول با موفقیت دریافت شد."
+            )
+        else:
+            # به‌روزرسانی پیام عدم موفقیت
+            bot.edit_message_text(
+                chat_id=chat_id, 
+                message_id=status_message.message_id,
+                text="❌ هیچ محصولی یافت نشد."
+            )
+    
+    except Exception as e:
+        # به‌روزرسانی پیام خطا
+        bot.edit_message_text(
+            chat_id=chat_id, 
+            message_id=status_message.message_id,
+            text=f"❌ خطا در دریافت محصولات: {str(e)}"
         )
-    else:
-        bot.reply_to(message, "❌ هیچ محصولی دریافت نشد.")
-
-    session.close()
-
 
 # راهنمای ربات
 @bot.message_handler(func=lambda message: message.text == '❓ راهنما')
