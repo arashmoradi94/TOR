@@ -13,6 +13,8 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime
 import hashlib
 from telebot import types
+import pandas as pd
+from io import BytesIO
 
 pymysql.install_as_MySQLdb() 
 
@@ -194,7 +196,8 @@ def handle_contact(message, first_name=None, last_name=None):
         # منوی اصلی
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.row('👤 پروفایل', '🌐 اتصال به سایت')
-        markup.row('📦 دریافت محصولات', '❓ راهنما')
+        markup.row('📦 دریافت محصولات', '🛍️ محصولات')
+        markup.row('❓ راهنما')
         
         bot.reply_to(
             message, 
@@ -296,20 +299,58 @@ def save_consumer_secret(message):
     session.close()
 
 # دریافت محصولات
+import pandas as pd
+from io import BytesIO
+
 @bot.message_handler(func=lambda message: message.text == '📦 دریافت محصولات')
 @error_handler
 def export_products_to_excel(message):
     chat_id = message.chat.id
 
+    # ابتدا بررسی می‌کنیم که کاربر اطلاعات اتصال به سایت را وارد کرده باشد
     session = Session()
     user = session.query(User).filter_by(chat_id=chat_id).first()
     
     if not user or not all([user.site_url, user.consumer_key, user.consumer_secret]):
         bot.reply_to(message, "❌ ابتدا اطلاعات اتصال به سایت را وارد کنید.")
+        session.close()  # بستن سشن دیتابیس
         return
 
-    # کد برای دریافت و ذخیره محصولات به اکسل...
+    # نمایش پیام در حال دریافت محصولات
     bot.reply_to(message, "📊 در حال دریافت محصولات...")
+
+    # فرض می‌کنیم که مدل Product به درستی تعریف شده است
+    products = session.query(Product).all()
+    session.close()  # بستن سشن دیتابیس
+
+    if not products:
+        bot.reply_to(message, "❌ هیچ محصولی در سیستم موجود نیست.")
+        return
+    
+    # ساخت داده‌ها برای تبدیل به DataFrame
+    product_data = []
+    for product in products:
+        product_data.append({
+            "شناسه محصول": product.id,
+            "نام محصول": product.name,
+            "قیمت": product.price,
+            "موجودی": product.stock,
+            "اطلاعات": product.info,
+        })
+    
+    # تبدیل داده‌ها به DataFrame
+    df = pd.DataFrame(product_data)
+    
+    # ایجاد فایل Excel در حافظه
+    excel_file = BytesIO()
+    df.to_excel(excel_file, index=False, engine='openpyxl')
+    excel_file.seek(0)  # بازگشت به ابتدای فایل برای ارسال
+    
+    # ارسال فایل به کاربر
+    bot.send_document(chat_id, excel_file, caption="📊 لیست محصولات")
+
+
+
 
 # راهنمای ربات
 @bot.message_handler(func=lambda message: message.text == '❓ راهنما')
@@ -323,6 +364,114 @@ def help_command(message):
         "4. از منوی اصلی، گزینه‌های مختلف را انتخاب کنید."
     )
     bot.reply_to(message, help_text)
+
+#دریافت محصولات 
+@bot.message_handler(func=lambda message: message.text == '🛍️ محصولات')
+@error_handler
+def product_handler(message):
+    bot.reply_to(message, "🆔 لطفاً شناسه محصول را وارد کنید:", reply_markup=main_menu_markup())
+    bot.register_next_step_handler(message, search_product_by_id)
+
+def search_product_by_id(message):
+    product_id = message.text.strip()
+
+    session = Session()
+    product = session.query(Product).filter_by(id=product_id).first()
+    session.close()
+
+    if product:
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.row('💰 تغییر قیمت', '📦 تغییر موجودی')
+        markup.row('✏️ تغییر نام و اطلاعات', '❌ حذف محصول')
+        markup.row('🔙 بازگشت به منوی اصلی')
+
+        bot.reply_to(
+            message,
+            f"✅ محصول یافت شد:\n"
+            f"🆔 شناسه: {product.id}\n"
+            f"📛 نام: {product.name}\n"
+            f"💰 قیمت: {product.price}\n"
+            f"📦 موجودی: {product.stock}\n",
+            reply_markup=markup
+        )
+        bot.register_next_step_handler(message, product_action_handler, product)
+    else:
+        bot.reply_to(message, "❌ محصولی با این شناسه یافت نشد.", reply_markup=main_menu_markup())
+
+def product_action_handler(message, product):
+    action = message.text.strip()
+
+    if action == '💰 تغییر قیمت':
+        bot.reply_to(message, "💰 لطفاً قیمت جدید را وارد کنید:")
+        bot.register_next_step_handler(message, change_product_price, product)
+    elif action == '📦 تغییر موجودی':
+        bot.reply_to(message, "📦 لطفاً موجودی جدید را وارد کنید:")
+        bot.register_next_step_handler(message, change_product_stock, product)
+    elif action == '✏️ تغییر نام و اطلاعات':
+        bot.reply_to(message, "✏️ لطفاً نام جدید و اطلاعات جدید را وارد کنید (فرمت: نام | اطلاعات):")
+        bot.register_next_step_handler(message, change_product_info, product)
+    elif action == '❌ حذف محصول':
+        confirm_markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        confirm_markup.row('⚠️ بله، حذف شود', '🔙 بازگشت به منوی اصلی')
+        bot.reply_to(
+            message,
+            f"⚠️ آیا مطمئن هستید که می‌خواهید محصول {product.name} را حذف کنید؟ این عملیات قابل بازگشت نیست.",
+            reply_markup=confirm_markup
+        )
+        bot.register_next_step_handler(message, delete_product, product)
+    elif action == '🔙 بازگشت به منوی اصلی':
+        bot.reply_to(message, "🔙 بازگشت به منوی اصلی.", reply_markup=main_menu_markup())
+    else:
+        bot.reply_to(message, "❌ گزینه نامعتبر.", reply_markup=main_menu_markup())
+
+def change_product_price(message, product):
+    try:
+        new_price = float(message.text.strip())
+        session = Session()
+        product.price = new_price
+        session.commit()
+        session.close()
+        bot.reply_to(message, f"✅ قیمت محصول به {new_price} تغییر یافت.", reply_markup=main_menu_markup())
+    except ValueError:
+        bot.reply_to(message, "❌ قیمت نامعتبر. لطفاً دوباره تلاش کنید.")
+        bot.register_next_step_handler(message, change_product_price, product)
+
+def change_product_stock(message, product):
+    try:
+        new_stock = int(message.text.strip())
+        session = Session()
+        product.stock = new_stock
+        session.commit()
+        session.close()
+        bot.reply_to(message, f"✅ موجودی محصول به {new_stock} تغییر یافت.", reply_markup=main_menu_markup())
+    except ValueError:
+        bot.reply_to(message, "❌ موجودی نامعتبر. لطفاً دوباره تلاش کنید.")
+        bot.register_next_step_handler(message, change_product_stock, product)
+
+def change_product_info(message, product):
+    try:
+        new_name, new_info = message.text.split('|', 1)
+        session = Session()
+        product.name = new_name.strip()
+        product.info = new_info.strip()
+        session.commit()
+        session.close()
+        bot.reply_to(message, "✅ اطلاعات محصول با موفقیت به‌روز شد.", reply_markup=main_menu_markup())
+    except ValueError:
+        bot.reply_to(message, "❌ فرمت نامعتبر. لطفاً دوباره تلاش کنید.")
+        bot.register_next_step_handler(message, change_product_info, product)
+
+def delete_product(message, product):
+    if message.text.strip() == '⚠️ بله، حذف شود':
+        session = Session()
+        session.delete(product)
+        session.commit()
+        session.close()
+        bot.reply_to(message, "✅ محصول با موفقیت حذف شد.", reply_markup=main_menu_markup())
+    else:
+        bot.reply_to(message, "🔙 بازگشت به منوی اصلی.", reply_markup=main_menu_markup())
+
+
 
 @app.route('/' + TOKEN, methods=['POST'])
 def webhook():
