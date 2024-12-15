@@ -471,7 +471,13 @@ def delete_product(message, product):
     else:
         bot.reply_to(message, "🔙 بازگشت به منوی اصلی.", reply_markup=main_menu_markup())
 
-
+# اضافه کردن تابع main_menu_markup
+def main_menu_markup():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row('👤 پروفایل', '🌐 اتصال به سایت')
+    markup.row('📦 دریافت محصولات', '🛍️ محصولات')
+    markup.row('❓ راهنما')
+    return markup
 
 @app.route('/' + TOKEN, methods=['POST'])
 def webhook():
