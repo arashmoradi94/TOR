@@ -899,7 +899,7 @@ def fetch_woocommerce_products(user, max_products=1000):
     try:
         # ایجاد اتصال API
         wcapi = API(
-            url=user.site_url,
+            url = user.site_url + '/wp-json/wc/v3/products',
             consumer_key=user.consumer_key,
             consumer_secret=user.consumer_secret,
             version="wc/v3",
