@@ -233,6 +233,7 @@ def sync_all_products(user):
 
 # مدل کاربر
 Base = declarative_base()
+
 class User(Base):
     __tablename__ = 'users'
     # استفاده از BigInteger برای chat_id
@@ -352,7 +353,7 @@ def get_last_name(message, first_name):
     # ذخیره نام و نام خانوادگی در سشن برای مرحله بعد
     bot.register_next_step_handler(message, handle_contact, first_name, last_name)
 
-@bot.message_handler(content_types=['contact'])
+Copy@bot.message_handler(content_types=['contact'])
 @error_handler
 def handle_contact(message, first_name=None, last_name=None):
     contact = message.contact
@@ -384,23 +385,12 @@ def handle_contact(message, first_name=None, last_name=None):
         
         session.commit()
         
-        # باقی کد...
-    
-    except Exception as e:
-        session.rollback()
-        logger.error(f"خطا در ذخیره کاربر: {str(e)}")
-        bot.reply_to(message, "❌ متأسفانه خطایی در ذخیره اطلاعات شما رخ داده است.")
-    
-    finally:
-        session.close()
-        
         # منوی اصلی
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.row('👤 پروفایل', '🌐 اتصال به سایت')
         markup.row('🛍️ محصولات')
         markup.row('🌐 تست اتصال به سایت', '❓ راهنما')
-        markup.row('📦 دریافت اکسل محصولات')
-        markup.row('🔬 تشخیص مشکل محصولات')
+        markup.row('📦 دریافت اکسل محصولات', '🔬 تشخیص مشکل محصولات')
         
         bot.reply_to(
             message, 
@@ -1289,8 +1279,7 @@ def main_menu_markup():
     markup.row('👤 پروفایل', '🌐 اتصال به سایت')
     markup.row('🛍️ محصولات')
     markup.row('🌐 تست اتصال به سایت', '❓ راهنما')
-    markup.row('📦 دریافت اکسل محصولات')
-    markup.row('🔬 تشخیص مشکل محصولات')
+    markup.row('📦 دریافت اکسل محصولات', '🔬 تشخیص مشکل محصولات')
     return markup
 
 
