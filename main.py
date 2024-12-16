@@ -233,25 +233,23 @@ def sync_all_products(user):
 
 # مدل کاربر
 Base = declarative_base()
-
 class User(Base):
     __tablename__ = 'users'
-
     # استفاده از BigInteger برای chat_id
     chat_id = Column(BigInteger, primary_key=True)
     
     # افزایش طول ستون‌ها
-    username = Column(String(255), nullable=True)
-    first_name = Column(String(255), nullable=True)
-    last_name = Column(String(255), nullable=True)
+    username = Column(String(255), nullable=True, default='')
+    first_name = Column(String(255), nullable=True, default='')
+    last_name = Column(String(255), nullable=True, default='')
     
     # تغییر طول phone_number
-    phone_number = Column(String(20), nullable=True)
+    phone_number = Column(String(20), nullable=True, default='')
     
     # استفاده از Text برای فیلدهای بزرگ
-    site_url = Column(Text, nullable=True)
-    consumer_key = Column(Text, nullable=True)
-    consumer_secret = Column(Text, nullable=True)
+    site_url = Column(Text, nullable=True, default='')
+    consumer_key = Column(Text, nullable=True, default='')
+    consumer_secret = Column(Text, nullable=True, default='')
     
     registration_date = Column(DateTime, default=datetime.now)
     last_activity = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -359,7 +357,6 @@ def get_last_name(message, first_name):
 def handle_contact(message, first_name=None, last_name=None):
     contact = message.contact
     chat_id = message.chat.id
-
     session = Session()
     
     try:
@@ -369,19 +366,33 @@ def handle_contact(message, first_name=None, last_name=None):
         if not user:
             user = User(
                 chat_id=chat_id,
-                username=message.from_user.username,
-                first_name=first_name or contact.first_name,
-                last_name=last_name or contact.last_name,
-                phone_number=contact.phone_number
+                username=message.from_user.username or '',  # استفاده از رشته خالی اگر None باشد
+                first_name=first_name or contact.first_name or '',  # اضافه کردن رشته خالی
+                last_name=last_name or contact.last_name or '',  # اضافه کردن رشته خالی
+                phone_number=contact.phone_number or '',  # اضافه کردن رشته خالی
+                site_url='',  # اضافه کردن مقادیر پیش‌فرض
+                consumer_key='',
+                consumer_secret=''
             )
             session.add(user)
         else:
-            user.first_name = first_name or user.first_name
-            user.last_name = last_name or user.last_name
-            user.phone_number = contact.phone_number
+            user.username = message.from_user.username or user.username or ''
+            user.first_name = first_name or contact.first_name or user.first_name or ''
+            user.last_name = last_name or contact.last_name or user.last_name or ''
+            user.phone_number = contact.phone_number or user.phone_number or ''
             user.last_activity = datetime.now()
         
         session.commit()
+        
+        # باقی کد...
+    
+    except Exception as e:
+        session.rollback()
+        logger.error(f"خطا در ذخیره کاربر: {str(e)}")
+        bot.reply_to(message, "❌ متأسفانه خطایی در ذخیره اطلاعات شما رخ داده است.")
+    
+    finally:
+        session.close()
         
         # منوی اصلی
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
