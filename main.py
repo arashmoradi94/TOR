@@ -249,9 +249,9 @@ class User(Base):
     phone_number = Column(String(20), nullable=True)
     
     # استفاده از Text برای فیلدهای بزرگ
-    site_url = Column(Text, nullable=True)
-    consumer_key = Column(Text, nullable=True)
-    consumer_secret = Column(Text, nullable=True)
+    site_url = Column(Text, nullable=True, default='')
+    consumer_key = Column(Text, nullable=True, default='')
+    consumer_secret = Column(Text, nullable=True, default='')
     
     registration_date = Column(DateTime, default=datetime.now)
     last_activity = Column(DateTime, default=datetime.now, onupdate=datetime.now)
