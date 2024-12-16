@@ -16,6 +16,7 @@ from telebot import types
 import pandas as pd
 from io import BytesIO
 from woocommerce import API
+import re
 
 pymysql.install_as_MySQLdb() 
 
