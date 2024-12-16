@@ -898,62 +898,62 @@ def export_products_to_excel(message):
 
 def fetch_woocommerce_products(user, max_products=1000):
     """
-    Fetch products from WooCommerce API with pagination
+    دریافت محصولات با تنظیمات دقیق‌تر
     """
     all_products = []
     page = 1
     total_pages = 1
 
     try:
-        # Create WooCommerce API connection
+        # اتصال API با تنظیمات کامل‌تر
         wcapi = API(
-            url=f"{user.site_url}/wp-json/wc/v3",
+            url=user.site_url,  # آدرس کامل سایت
             consumer_key=user.consumer_key,
             consumer_secret=user.consumer_secret,
+            wp_api=True,  # فعال‌سازی WP API
             version="wc/v3",
-            timeout=30
+            timeout=60  # افزایش زمان انتظار
         )
 
-        # Request parameters
+        # پارامترهای درخواست
         params = {
             'per_page': 100,
             'page': page,
-            'status': ['publish', 'draft', 'pending'],
+            'status': 'any',  # دریافت تمام وضعیت‌ها
             'orderby': 'date',
             'order': 'desc'
         }
 
-        logging.info(f"🔍 شروع دریافت محصولات از {user.site_url}")
-
         while page <= total_pages and len(all_products) < max_products:
-            logging.info(f"📡 درخواست صفحه {page}")
+            # چاپ اطلاعات برای دیباگ
+            logging.info(f"درخواست صفحه {page}")
 
+            # درخواست با پارامترهای کامل‌تر
             response = wcapi.get("products", params=params)
-
+            
+            # بررسی دقیق‌تر پاسخ
             if response.status_code not in [200, 201]:
-                logging.error(f"خطا در دریافت محصولات: {response.text}")
+                logging.error(f"خطا در دریافت: {response.text}")
                 break
 
             products = response.json()
             
             if not products:
-                logging.warning("⚠️ صفحه خالی دریافت شد")
                 break
 
-            # Add products
             all_products.extend(products)
 
-            # Update total pages
+            # به‌روزرسانی صفحات
             total_pages = int(response.headers.get('X-WP-TotalPages', 1))
-            logging.info(f"تعداد کل صفحات: {total_pages} - محصولات دریافت شده: {len(all_products)}")
             page += 1
             params['page'] = page
 
         return all_products
 
     except Exception as e:
-        logging.error(f"خطای کلی در دریافت محصولات: {str(e)}")
+        logging.error(f"خطای کلی: {str(e)}")
         return []
+
 
 def prepare_detailed_product_data(products):
     """
