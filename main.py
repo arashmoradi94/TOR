@@ -761,16 +761,76 @@ def sync_products(user):
     finally:
         session.close()
 
-# تابع دریافت محصولات در هندلر
-import logging
-from woocommerce import API
-import traceback
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+@bot.message_handler(func=lambda message: message.text == '🛍️ محصولات')
+@error_handler
+def product_handler(message):
+    """
+    Handle initial product search request
+    """
+    bot.reply_to(message, "🆔 لطفاً شناسه یا نام محصول را وارد کنید:", reply_markup=main_menu_markup())
+    bot.register_next_step_handler(message, search_product)
+
+def search_product(message):
+    """
+    Search for product by ID or name
+    """
+    search_term = message.text.strip()
+    session = Session()
+    
+    try:
+        # Search by ID first
+        product = session.query(Product).filter_by(id=search_term).first()
+        
+        # If not found, try searching by name
+        if not product:
+            product = session.query(Product).filter(Product.name.ilike(f'%{search_term}%')).first()
+        
+        if product:
+            # Create markup for product actions
+            markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            markup.row('💰 تغییر قیمت', '📦 تغییر موجودی')
+            markup.row('✏️ تغییر نام و اطلاعات', '❌ حذف محصول')
+            markup.row('🔗 اطلاعات کامل', '🔙 بازگشت به منوی اصلی')
+
+            # Detailed product info display
+            product_info = (
+                f"✅ محصول یافت شد:\n"
+                f"🆔 شناسه: {product.id}\n"
+                f"📛 نام: {product.name}\n"
+                f"💰 قیمت: {product.price:,} تومان\n"
+                f"📦 موجودی: {product.stock}\n"
+                f"ℹ️ اطلاعات تکمیلی: {product.info or 'نامشخص'}"
+            )
+            
+            bot.reply_to(
+                message,
+                product_info,
+                reply_markup=markup
+            )
+            bot.register_next_step_handler(message, product_action_handler, product)
+        else:
+            bot.reply_to(message, "❌ محصولی با این شناسه یا نام یافت نشد.", reply_markup=main_menu_markup())
+    
+    except Exception as e:
+        logging.error(f"خطا در جستجوی محصول: {str(e)}")
+        bot.reply_to(message, "❌ خطای سیستمی در جستجوی محصول.", reply_markup=main_menu_markup())
+    
+    finally:
+        session.close()
 
 @bot.message_handler(func=lambda message: message.text == '📦 دریافت اکسل محصولات')
+@error_handler
 def export_products_to_excel(message):
+    """
+    Export products to Excel file
+    """
     chat_id = message.chat.id
     
-    # بررسی اطلاعات کاربر
+    # Check user connection details
     session = Session()
     try:
         user = session.query(User).filter_by(chat_id=chat_id).first()
@@ -779,11 +839,11 @@ def export_products_to_excel(message):
             bot.reply_to(message, "❌ ابتدا اطلاعات اتصال به سایت را کامل کنید.")
             return
 
-        # ارسال پیام در حال دریافت
+        # Send initial status message
         status_message = bot.reply_to(message, "📦 در حال دریافت محصولات...")
 
         try:
-            # دریافت محصولات
+            # Fetch products from WooCommerce
             products = fetch_woocommerce_products(user)
             
             if not products:
@@ -794,93 +854,40 @@ def export_products_to_excel(message):
                 )
                 return
 
-            # آماده‌سازی داده‌ها
-            product_data = prepare_product_data(products)
+            # Prepare product data
+            product_data = prepare_detailed_product_data(products)
 
-            # ایجاد DataFrame
+            # Create DataFrame
             df = pd.DataFrame(product_data)
 
-            # نام فایل با تاریخ و زمان
+            # Generate filename with timestamp
             excel_filename = f"products_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
             
-            # ذخیره اکسل با مدیریت خطا
-            try:
-                df.to_excel(excel_filename, index=False, encoding='utf-8')
-            except Exception as excel_error:
-                bot.edit_message_text(
-                    chat_id=chat_id, 
-                    message_id=status_message.message_id,
-                    text=f"❌ خطا در ایجاد فایل اکسل: {str(excel_error)}"
-                )
-                logging.error(f"خطا در ایجاد فایل اکسل: {str(excel_error)}")
-                return
+            # Save Excel file
+            df.to_excel(excel_filename, index=False, encoding='utf-8-sig')
 
-            # بررسی وجود فایل
-            if not os.path.exists(excel_filename):
-                bot.edit_message_text(
+            # Send Excel file
+            with open(excel_filename, 'rb') as excel_file:
+                sent_file = bot.send_document(
                     chat_id=chat_id, 
-                    message_id=status_message.message_id,
-                    text="❌ فایل اکسل ایجاد نشد."
+                    document=excel_file, 
+                    caption=f"📊 فایل اکسل محصولات ({len(products)} محصول)",
+                    timeout=60
                 )
-                return
-
-            # ارسال فایل با مدیریت خطا
-            try:
-                with open(excel_filename, 'rb') as excel_file:
-                    # استفاده از send_document با پارامترهای کامل
-                    sent_file = bot.send_document(
-                        chat_id=chat_id, 
-                        document=excel_file, 
-                        caption=f"📊 فایل اکسل محصولات ({len(products)} محصول)",
-                        timeout=60  # افزایش زمان انتظار
-                    )
-                
-                # بررسی ارسال موفق فایل
-                if not sent_file:
-                    bot.edit_message_text(
-                        chat_id=chat_id, 
-                        message_id=status_message.message_id,
-                        text="❌ خطا در ارسال فایل اکسل."
-                    )
-                    return
-
-            except telebot.apihelper.ApiException as api_error:
-                bot.edit_message_text(
-                    chat_id=chat_id, 
-                    message_id=status_message.message_id,
-                    text=f"❌ خطای Telegram در ارسال فایل: {str(api_error)}"
-                )
-                logging.error(f"خطای Telegram: {str(api_error)}")
-                return
             
-            except Exception as send_error:
-                bot.edit_message_text(
-                    chat_id=chat_id, 
-                    message_id=status_message.message_id,
-                    text=f"❌ خطا در ارسال فایل: {str(send_error)}"
-                )
-                logging.error(f"خطا در ارسال فایل: {str(send_error)}")
-                return
-
-            # حذف فایل
-            try:
-                os.remove(excel_filename)
-            except Exception as remove_error:
-                logging.warning(f"خطا در حذف فایل: {str(remove_error)}")
-
-            # حذف پیام وضعیت
-            try:
-                bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
-            except:
-                pass
+            # Delete temporary file
+            os.remove(excel_filename)
+            
+            # Delete status message
+            bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
 
         except Exception as export_error:
+            logging.error(f"خطا در دریافت محصولات: {str(export_error)}")
             bot.edit_message_text(
                 chat_id=chat_id, 
                 message_id=status_message.message_id,
                 text=f"❌ خطا در دریافت محصولات: {str(export_error)}"
             )
-            logging.error(f"خطا در دریافت محصولات: {str(export_error)}")
 
     except Exception as session_error:
         logging.error(f"خطا در جلسه کاربری: {str(session_error)}")
@@ -891,14 +898,14 @@ def export_products_to_excel(message):
 
 def fetch_woocommerce_products(user, max_products=1000):
     """
-    دریافت محصولات از WooCommerce با مدیریت صفحات
+    Fetch products from WooCommerce API with pagination
     """
     all_products = []
     page = 1
     total_pages = 1
 
     try:
-        # ایجاد اتصال API
+        # Create WooCommerce API connection
         wcapi = API(
             url=f"{user.site_url}/wp-json/wc/v3",
             consumer_key=user.consumer_key,
@@ -907,9 +914,9 @@ def fetch_woocommerce_products(user, max_products=1000):
             timeout=30
         )
 
-        # پارامترهای درخواست
+        # Request parameters
         params = {
-            'per_page': 100,  # حداکثر محصولات در هر درخواست
+            'per_page': 100,
             'page': page,
             'status': ['publish', 'draft', 'pending'],
             'orderby': 'date',
@@ -933,10 +940,10 @@ def fetch_woocommerce_products(user, max_products=1000):
                 logging.warning("⚠️ صفحه خالی دریافت شد")
                 break
 
-            # اضافه کردن محصولات
+            # Add products
             all_products.extend(products)
 
-            # به‌روزرسانی تعداد صفحات
+            # Update total pages
             total_pages = int(response.headers.get('X-WP-TotalPages', 1))
             logging.info(f"تعداد کل صفحات: {total_pages} - محصولات دریافت شده: {len(all_products)}")
             page += 1
@@ -948,25 +955,28 @@ def fetch_woocommerce_products(user, max_products=1000):
         logging.error(f"خطای کلی در دریافت محصولات: {str(e)}")
         return []
 
-def prepare_product_data(products):
+def prepare_detailed_product_data(products):
     """
-    آماده‌سازی داده‌های محصولات برای اکسل
+    Prepare comprehensive product data for Excel export
     """
     product_data = []
 
     for product in products:
         try:
-            # مدیریت قیمت
+            # Handle price
             price = float(product.get('price', 0)) if product.get('price') else 0.0
             
-            # مدیریت موجودی
-            stock = int(product.get('stock_quantity', 0)) if product.get('stock_quantity') else 0
+            # Handle stock
+            stock = int(product.get('stock_quantity', 0)) if product.get('stock_quantity') is not None else 0
             
-            # دسته‌بندی‌ها
-            categories = [cat.get('name', '') for cat in product.get('categories', [])]
+            # Categories
+            categories = ', '.join([cat.get('name', '') for cat in product.get('categories', [])])
             
-            # تگ‌ها
-            tags = [tag.get('name', '') for tag in product.get('tags', [])]
+            # Tags
+            tags = ', '.join([tag.get('name', '') for tag in product.get('tags', [])])
+
+            # Remove HTML tags from description
+            description = strip_html_tags(product.get('description', ''))
 
             product_entry = {
                 "شناسه محصول": product.get('id', ''),
@@ -976,6 +986,9 @@ def prepare_product_data(products):
                 "کد محصول (SKU)": product.get('sku', ''),
                 "وضعیت": product.get('status', ''),
                 "لینک محصول": product.get('permalink', ''),
+                "دسته‌بندی‌ها": categories,
+                "برچسب‌ها": tags,
+                "توضیحات": description
             }
             
             product_data.append(product_entry)
@@ -987,294 +1000,14 @@ def prepare_product_data(products):
 
 def strip_html_tags(text):
     """
-    حذف تگ‌های HTML از متن
+    Remove HTML tags from text
     """
     if text:
         clean = re.compile('<.*?>')
         return re.sub(clean, '', text)
     return ''
-# راهنمای ربات
-@bot.message_handler(func=lambda message: message.text == '❓ راهنما')
-@error_handler
-def help_command(message):
-    help_text = (
-        "📚 راهنمای استفاده از ربات:\n"
-        "1. برای شروع، نام و نام خانوادگی خود را وارد کنید.\n"
-        "2. شماره تماس خود را به اشتراک بگذارید.\n"
-        "3. اطلاعات اتصال به سایت را وارد کنید.\n"
-        "4. از منوی اصلی، گزینه‌های مختلف را انتخاب کنید."
-    )
-    bot.reply_to(message, help_text)
 
-#دریافت محصولات 
-@bot.message_handler(func=lambda message: message.text == '🛍️ محصولات')
-@error_handler
-def product_handler(message):
-    bot.reply_to(message, "🆔 لطفاً شناسه محصول را وارد کنید:", reply_markup=main_menu_markup())
-    bot.register_next_step_handler(message, search_product_by_id)
-
-def search_product_by_id(message):
-    product_id = message.text.strip()
-
-    session = Session()
-    product = session.query(Product).filter_by(id=product_id).first()
-    session.close()
-
-    if product:
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        markup.row('💰 تغییر قیمت', '📦 تغییر موجودی')
-        markup.row('✏️ تغییر نام و اطلاعات', '❌ حذف محصول')
-        markup.row('🔙 بازگشت به منوی اصلی')
-
-        bot.reply_to(
-            message,
-            f"✅ محصول یافت شد:\n"
-            f"🆔 شناسه: {product.id}\n"
-            f"📛 نام: {product.name}\n"
-            f"💰 قیمت: {product.price}\n"
-            f"📦 موجودی: {product.stock}\n",
-            reply_markup=markup
-        )
-        bot.register_next_step_handler(message, product_action_handler, product)
-    else:
-        bot.reply_to(message, "❌ محصولی با این شناسه یافت نشد.", reply_markup=main_menu_markup())
-
-def product_action_handler(message, product):
-    action = message.text.strip()
-
-    if action == '💰 تغییر قیمت':
-        bot.reply_to(message, "💰 لطفاً قیمت جدید را وارد کنید:")
-        bot.register_next_step_handler(message, change_product_price, product)
-    elif action == '📦 تغییر موجودی':
-        bot.reply_to(message, "📦 لطفاً موجودی جدید را وارد کنید:")
-        bot.register_next_step_handler(message, change_product_stock, product)
-    elif action == '✏️ تغییر نام و اطلاعات':
-        bot.reply_to(message, "✏️ لطفاً نام جدید و اطلاعات جدید را وارد کنید (فرمت: نام | اطلاعات):")
-        bot.register_next_step_handler(message, change_product_info, product)
-    elif action == '❌ حذف محصول':
-        confirm_markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        confirm_markup.row('⚠️ بله، حذف شود', '🔙 بازگشت به منوی اصلی')
-        bot.reply_to(
-            message,
-            f"⚠️ آیا مطمئن هستید که می‌خواهید محصول {product.name} را حذف کنید؟ این عملیات قابل بازگشت نیست.",
-            reply_markup=confirm_markup
-        )
-        bot.register_next_step_handler(message, delete_product, product)
-    elif action == '🔙 بازگشت به منوی اصلی':
-        bot.reply_to(message, "🔙 بازگشت به منوی اصلی.", reply_markup=main_menu_markup())
-    else:
-        bot.reply_to(message, "❌ گزینه نامعتبر.", reply_markup=main_menu_markup())
-
-def change_product_price(message, product):
-    try:
-        new_price = float(message.text.strip())
-        session = Session()
-        product.price = new_price
-        session.commit()
-        session.close()
-        bot.reply_to(message, f"✅ قیمت محصول به {new_price} تغییر یافت.", reply_markup=main_menu_markup())
-    except ValueError:
-        bot.reply_to(message, "❌ قیمت نامعتبر. لطفاً دوباره تلاش کنید.")
-        bot.register_next_step_handler(message, change_product_price, product)
-
-def change_product_stock(message, product):
-    try:
-        new_stock = int(message.text.strip())
-        session = Session()
-        product.stock = new_stock
-        session.commit()
-        session.close()
-        bot.reply_to(message, f"✅ موجودی محصول به {new_stock} تغییر یافت.", reply_markup=main_menu_markup())
-    except ValueError:
-        bot.reply_to(message, "❌ موجودی نامعتبر. لطفاً دوباره تلاش کنید.")
-        bot.register_next_step_handler(message, change_product_stock, product)
-
-def change_product_info(message, product):
-    try:
-        new_name, new_info = message.text.split('|', 1)
-        session = Session()
-        product.name = new_name.strip()
-        product.info = new_info.strip()
-        session.commit()
-        session.close()
-        bot.reply_to(message, "✅ اطلاعات محصول با موفقیت به‌روز شد.", reply_markup=main_menu_markup())
-    except ValueError:
-        bot.reply_to(message, "❌ فرمت نامعتبر. لطفاً دوباره تلاش کنید.")
-        bot.register_next_step_handler(message, change_product_info, product)
-
-def delete_product(message, product):
-    if message.text.strip() == '⚠️ بله، حذف شود':
-        session = Session()
-        session.delete(product)
-        session.commit()
-        session.close()
-        bot.reply_to(message, "✅ محصول با موفقیت حذف شد.", reply_markup=main_menu_markup())
-    else:
-        bot.reply_to(message, "🔙 بازگشت به منوی اصلی.", reply_markup=main_menu_markup())
-def diagnose_product_request(user):
-    """
-    تشخیص دقیق مشکل درخواست محصولات
-    """
-    try:
-        # ایجاد اتصال به WooCommerce API
-        wcapi = API(
-            url=user.site_url,
-            consumer_key=user.consumer_key,
-            consumer_secret=user.consumer_secret,
-            version="wc/v3",
-            timeout=30
-        )
-
-        # اطلاعات پایه
-        logging.info("🔍 شروع تشخیص درخواست محصولات")
-        logging.info(f"آدرس سایت: {user.site_url}")
-        
-        # لیست پارامترهای تست
-        diagnostic_steps = [
-            {
-                'name': 'درخواست پایه',
-                'params': {},
-                'expected_keys': ['id', 'name', 'type', 'status']
-            },
-            {
-                'name': 'محصولات منتشر شده',
-                'params': {'status': 'publish'},
-                'expected_keys': ['id', 'name', 'type', 'status']
-            },
-            {
-                'name': 'محصولات پیش‌نویس',
-                'params': {'status': 'draft'},
-                'expected_keys': ['id', 'name', 'type', 'status']
-            }
-        ]
-
-        # نتایج تشخیص
-        diagnostic_results = {}
-
-        # اجرای مراحل تشخیص
-        for step in diagnostic_steps:
-            logging.info(f"\n🧪 مرحله: {step['name']}")
-            logging.info(f"پارامترها: {step['params']}")
-
-            try:
-                # درخواست محصولات
-                response = wcapi.get("products", params=step['params'])
-                
-                # اطلاعات پاسخ
-                logging.info(f"کد وضعیت: {response.status_code}")
-                
-                # بررسی وضعیت
-                if response.status_code in [200, 201]:
-                    products = response.json()
-                    
-                    # بررسی تعداد محصولات
-                    logging.info(f"تعداد محصولات: {len(products)}")
-                    
-                    # بررسی محتوای محصولات
-                    if products:
-                        first_product = products[0]
-                        
-                        # بررسی کلیدهای مورد انتظار
-                        missing_keys = [
-                            key for key in step['expected_keys'] 
-                            if key not in first_product
-                        ]
-                        
-                        # ثبت نتیجه
-                        diagnostic_results[step['name']] = {
-                            'status': True,
-                            'product_count': len(products),
-                            'missing_keys': missing_keys
-                        }
-                        
-                        # نمایش جزئیات محصول اول
-                        logging.info("جزئیات محصول اول:")
-                        for key, value in first_product.items():
-                            logging.info(f"{key}: {value}")
-                    
-                    else:
-                        diagnostic_results[step['name']] = {
-                            'status': False,
-                            'error': 'هیچ محصولی یافت نشد'
-                        }
-                
-                else:
-                    diagnostic_results[step['name']] = {
-                        'status': False,
-                        'error': response.text
-                    }
-            
-            except Exception as step_error:
-                logging.error(f"خطا در مرحله {step['name']}: {str(step_error)}")
-                diagnostic_results[step['name']] = {
-                    'status': False,
-                    'error': str(step_error)
-                }
-        
-        return diagnostic_results
-
-    except Exception as e:
-        logging.error(f"❌ خطای کلی: {str(e)}")
-        return {}
-
-# هندلر تشخیص مشکل محصولات
-@bot.message_handler(func=lambda message: message.text == '🔬 تشخیص مشکل محصولات')
-@error_handler
-def handle_product_diagnosis(message):
-    chat_id = message.chat.id
-    
-    # بررسی اطلاعات کاربر
-    session = Session()
-    user = session.query(User).filter_by(chat_id=chat_id).first()
-    session.close()
-    
-    if not user or not all([user.site_url, user.consumer_key, user.consumer_secret]):
-        bot.reply_to(message, "❌ ابتدا اطلاعات اتصال به سایت را کامل کنید.")
-        return
-    
-    # ارسال پیام در حال تشخیص
-    status_message = bot.reply_to(message, "🔬 در حال تشخیص مشکل محصولات...")
-
-    try:
-        # اجرای تشخیص
-        diagnosis_results = diagnose_product_request(user)
-
-        # ساخت متن گزارش
-        report_text = "🔍 گزارش تشخیص محصولات:\n\n"
-        for step, result in diagnosis_results.items():
-            if result['status']:
-                emoji = '✅'
-                report_text += (
-                    f"{emoji} {step}:\n"
-                    f"   📦 تعداد محصولات: {result['product_count']}\n"
-                )
-                
-                if result.get('missing_keys'):
-                    report_text += f"   ⚠️ کلیدهای از دست رفته: {', '.join(result['missing_keys'])}\n"
-            else:
-                emoji = '❌'
-                report_text += (
-                    f"{emoji} {step}:\n"
-                    f"   ⚠️ خطا: {result.get('error', 'نامشخص')}\n"
-                )
-            
-            report_text += "---\n"
-        
-        # به‌روزرسانی پیام
-        bot.edit_message_text(
-            chat_id=chat_id, 
-            message_id=status_message.message_id,
-            text=report_text
-        )
-    
-    except Exception as e:
-        bot.edit_message_text(
-            chat_id=chat_id, 
-            message_id=status_message.message_id,
-            text=f"❌ خطای کلی در تشخیص محصولات: {str(e)}"
-        )
-
-# اضافه کردن به منو
+# Additional helper functions and error handlers would be defined here
 def main_menu_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row('👤 پروفایل', '🌐 اتصال به سایت')
