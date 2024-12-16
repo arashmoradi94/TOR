@@ -336,23 +336,6 @@ def get_first_name(message):
     )
     bot.register_next_step_handler(message, get_last_name, first_name)
 
-def get_last_name(message, first_name):
-    last_name = message.text.strip()
-    
-    # ارسال دکمه اشتراک‌گذاری شماره تلفن
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    contact_button = types.KeyboardButton('🔖 اشتراک‌گذاری شماره تلفن', request_contact=True)
-    markup.add(contact_button)
-    
-    bot.reply_to(
-        message, 
-        f"👤 نام شما: {first_name} {last_name}\n"
-        "لطفاً شماره تماس خود را ارسال کنید.",
-        reply_markup=markup
-    )
-    
-    # ذخیره نام و نام خانوادگی در سشن برای مرحله بعد
-    bot.register_next_step_handler(message, handle_contact, first_name, last_name)
 
 @bot.message_handler(content_types=['contact'])
 @error_handler
