@@ -353,7 +353,7 @@ def get_last_name(message, first_name):
     # ذخیره نام و نام خانوادگی در سشن برای مرحله بعد
     bot.register_next_step_handler(message, handle_contact, first_name, last_name)
 
-Copy@bot.message_handler(content_types=['contact'])
+@bot.message_handler(content_types=['contact'])
 @error_handler
 def handle_contact(message, first_name=None, last_name=None):
     contact = message.contact
