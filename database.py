@@ -2,7 +2,8 @@ from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
-
+import pymysql
+pymysql.install_as_MySQLdb()
 
 DATABASE_URL = "mysql://root:MVGlbvnDNFhcLorvfEhckfoGMVvdWssj@junction.proxy.rlwy.net:27212/railway"
 
