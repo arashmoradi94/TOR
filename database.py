@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 
 
-DATABASE_URL = "mysql://root:MVGlbvnDNFhcLorvfEhckfoGMVvdWssj@mysql.railway.internal:3306/railway"
+DATABASE_URL = "mysql://root:MVGlbvnDNFhcLorvfEhckfoGMVvdWssj@junction.proxy.rlwy.net:27212/railway"
 
 
 # ایجاد پایگاه داده
