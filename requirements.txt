@@ -6,4 +6,3 @@ beautifulsoup4==4.9.3
 WooCommerce==3.0.0
 SQLAlchemy==1.4.22
 mysqlclient
-PyMySQL
