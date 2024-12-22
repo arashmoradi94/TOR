@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 
 # تنظیمات پایگاه داده
-DATABASE_URL = "sqlite:///./test.db"  # به راحتی می‌توانید از SQLite یا هر دیتابیس دیگر استفاده کنید
+DATABASE_URL = os.getenv('DATABASE_URL')  # به راحتی می‌توانید از SQLite یا هر دیتابیس دیگر استفاده کنید
 
 # ایجاد پایگاه داده
 Base = declarative_base()
