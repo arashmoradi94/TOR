@@ -2,7 +2,10 @@ from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
 # تنظیمات پایگاه داده
 DATABASE_URL = os.getenv('DATABASE_URL')  # به راحتی می‌توانید از SQLite یا هر دیتابیس دیگر استفاده کنید
 
