@@ -26,7 +26,7 @@ async def main():
     # Build application
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
-    # Create conversation handler with per_message=True
+    # Create conversation handler
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
@@ -44,7 +44,7 @@ async def main():
             ],
         },
         fallbacks=[CommandHandler('start', start)],
-        per_message=True  # اضافه کردن این پارامتر
+        per_message=False  # تغییر مقدار به False
     )
 
     # Add conversation handler
@@ -56,12 +56,9 @@ async def main():
     await application.start()
     
     try:
-        await application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            stop_signals=None  # غیرفعال کردن signal handling
-        )
+        await application.run_polling(allowed_updates=Update.ALL_TYPES)
     except Exception as e:
-        logger.error(f"Error during bot execution: {e}")
+        logger.error(f"Error during bot execution: {e}", exc_info=True)
     finally:
         logger.info("Stopping bot...")
         await application.stop()
