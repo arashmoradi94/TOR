@@ -60,10 +60,7 @@ async def main():
     await application.start()
     
     try:
-        await application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            stop_signals=None  # غیرفعال کردن signal handling
-        )
+        await application.run_polling()
     except Exception as e:
         logger.error(f"Error during bot execution: {e}")
     finally:
@@ -74,7 +71,8 @@ async def main():
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(main())
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
