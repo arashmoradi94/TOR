@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import nest_asyncio
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, 
     MessageHandler, filters, ConversationHandler
@@ -11,6 +12,9 @@ from handlers.command_handlers import (
     start, api_settings, set_woo_api, set_torob_api, back_to_main,
     CHOOSING, TYPING_WOO_KEY, TYPING_TOROB_KEY
 )
+
+# Apply nest_asyncio
+nest_asyncio.apply()
 
 # Set up logging
 logging.basicConfig(
@@ -44,7 +48,7 @@ async def main():
             ],
         },
         fallbacks=[CommandHandler('start', start)],
-        per_message=True  # اضافه کردن این پارامتر
+        per_message=False  # مقدار به False تغییر داده شده است
     )
 
     # Add conversation handler
