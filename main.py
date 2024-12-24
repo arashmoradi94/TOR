@@ -1,6 +1,9 @@
 import asyncio
 import logging
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ConversationHandler
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler, 
+    MessageHandler, filters, ConversationHandler
+)
 from telegram import Update
 from config import TELEGRAM_TOKEN
 from database.operations import init_db
@@ -14,13 +17,16 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
 async def main():
+    # Initialize database
     await init_db()
     
+    # Build application
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
-    # Create conversation handler
+    # Create conversation handler with per_message=True
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
@@ -38,29 +44,34 @@ async def main():
             ],
         },
         fallbacks=[CommandHandler('start', start)],
+        per_message=True  # اضافه کردن این پارامتر
     )
 
     # Add conversation handler
     application.add_handler(conv_handler)
 
+    # Start the bot
+    logger.info("Starting bot...")
+    await application.initialize()
+    await application.start()
+    
     try:
-        logging.info("Starting bot...")
-        await application.initialize()
-        await application.start()
-        await application.run_polling(allowed_updates=Update.ALL_TYPES)
+        await application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            stop_signals=None  # غیرفعال کردن signal handling
+        )
     except Exception as e:
-        logging.error(f"Error during bot execution: {e}")
-        await application.stop()
+        logger.error(f"Error during bot execution: {e}")
     finally:
-        logging.info("Bot stopped")
-
-def run_bot():
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logging.info("Bot stopped by user")
-    except Exception as e:
-        logging.error(f"Critical error: {e}")
+        logger.info("Stopping bot...")
+        await application.stop()
+        await application.shutdown()
+        logger.info("Bot stopped")
 
 if __name__ == "__main__":
-    run_bot()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Critical error: {e}")
