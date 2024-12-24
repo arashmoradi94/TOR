@@ -7,7 +7,14 @@ from config import DATABASE_URL, ENCRYPTION_KEY
 
 engine = create_async_engine(DATABASE_URL)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-fernet = Fernet(ENCRYPTION_KEY.encode())
+
+# کلید را به صورت bytes تبدیل می‌کنیم
+if isinstance(ENCRYPTION_KEY, str):
+    encryption_key = ENCRYPTION_KEY.encode()
+else:
+    encryption_key = ENCRYPTION_KEY
+    
+fernet = Fernet(encryption_key)
 
 async def init_db():
     async with engine.begin() as conn:
