@@ -5,7 +5,6 @@ from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, 
     MessageHandler, filters, ConversationHandler
 )
-from telegram import Update
 from config import TELEGRAM_TOKEN
 from database.operations import init_db
 from handlers.command_handlers import (
@@ -13,7 +12,7 @@ from handlers.command_handlers import (
     CHOOSING, TYPING_WOO_KEY, TYPING_TOROB_KEY
 )
 
-# Apply nest_asyncio
+# Apply nest_asyncio for environments with active event loops
 nest_asyncio.apply()
 
 # Set up logging
@@ -48,7 +47,7 @@ async def main():
             ],
         },
         fallbacks=[CommandHandler('start', start)],
-        per_message=False  # مقدار به False تغییر داده شده است
+        per_message=False  # Set to False to suppress PTBUserWarning
     )
 
     # Add conversation handler
