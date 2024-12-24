@@ -7,8 +7,10 @@ from handlers.command_handlers import (
 )
 
 async def main():
+    # Initialize database
     await init_db()
     
+    # Build application
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
     # Add handlers
@@ -22,8 +24,19 @@ async def main():
         process_product_search
     ))
     
-    # Start the bot
-    await application.run_polling()
+    # Start the bot without using run_polling()
+    await application.initialize()
+    await application.start()
+    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+def run_bot():
+    """Run the bot with proper error handling"""
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    except Exception as e:
+        print(f"Error running bot: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    run_bot()
