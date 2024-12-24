@@ -2,7 +2,7 @@ import asyncio
 import logging
 import nest_asyncio
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler, 
+    Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ConversationHandler
 )
 from config import TELEGRAM_TOKEN
@@ -47,7 +47,7 @@ async def main():
             ],
         },
         fallbacks=[CommandHandler('start', start)],
-        per_message=False  # Set to False to suppress PTBUserWarning
+        per_message=False  # Suppress PTBUserWarning
     )
 
     # Add conversation handler
@@ -59,7 +59,7 @@ async def main():
     await application.start()
     
     try:
-        await application.run_polling()
+        await application.run_polling()  # Polling loop
     except Exception as e:
         logger.error(f"Error during bot execution: {e}")
     finally:
