@@ -1,42 +1,66 @@
 import asyncio
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+import logging
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ConversationHandler
+from telegram import Update
 from config import TELEGRAM_TOKEN
 from database.operations import init_db
 from handlers.command_handlers import (
-    start, api_settings, search_product, process_product_search
+    start, api_settings, set_woo_api, set_torob_api, back_to_main,
+    CHOOSING, TYPING_WOO_KEY, TYPING_WOO_SECRET, TYPING_TOROB_KEY, TYPING_PRODUCT
+)
+
+# Set up logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
 )
 
 async def main():
-    # Initialize database
     await init_db()
     
-    # Build application
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
-    # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(api_settings, pattern="^api_settings$"))
-    application.add_handler(CallbackQueryHandler(search_product, pattern="^search_product$"))
-    
-    # Add message handler for product search
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        process_product_search
-    ))
-    
-    # Start the bot without using run_polling()
-    await application.initialize()
-    await application.start()
-    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Create conversation handler
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start)],
+        states={
+            CHOOSING: [
+                CallbackQueryHandler(api_settings, pattern='^api_settings$'),
+                CallbackQueryHandler(set_woo_api, pattern='^set_woo_api$'),
+                CallbackQueryHandler(set_torob_api, pattern='^set_torob_api$'),
+                CallbackQueryHandler(back_to_main, pattern='^back_to_main$'),
+            ],
+            TYPING_WOO_KEY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, set_woo_api)
+            ],
+            TYPING_TOROB_KEY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, set_torob_api)
+            ],
+        },
+        fallbacks=[CommandHandler('start', start)],
+    )
+
+    # Add conversation handler
+    application.add_handler(conv_handler)
+
+    try:
+        logging.info("Starting bot...")
+        await application.initialize()
+        await application.start()
+        await application.run_polling(allowed_updates=Update.ALL_TYPES)
+    except Exception as e:
+        logging.error(f"Error during bot execution: {e}")
+        await application.stop()
+    finally:
+        logging.info("Bot stopped")
 
 def run_bot():
-    """Run the bot with proper error handling"""
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        pass
+        logging.info("Bot stopped by user")
     except Exception as e:
-        print(f"Error running bot: {e}")
+        logging.error(f"Critical error: {e}")
 
 if __name__ == "__main__":
     run_bot()
