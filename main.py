@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import nest_asyncio
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, 
     MessageHandler, filters, ConversationHandler
@@ -10,11 +9,8 @@ from config import TELEGRAM_TOKEN
 from database.operations import init_db
 from handlers.command_handlers import (
     start, api_settings, set_woo_api, set_torob_api, back_to_main,
-    CHOOSING, TYPING_WOO_KEY, TYPING_WOO_SECRET, TYPING_TOROB_KEY, TYPING_PRODUCT
+    CHOOSING, TYPING_WOO_KEY, TYPING_TOROB_KEY
 )
-
-# Apply nest_asyncio to fix event loop issues
-nest_asyncio.apply()
 
 # Set up logging
 logging.basicConfig(
@@ -48,7 +44,7 @@ async def main():
             ],
         },
         fallbacks=[CommandHandler('start', start)],
-        per_message=False
+        per_message=True  # اضافه کردن این پارامتر
     )
 
     # Add conversation handler
@@ -58,8 +54,19 @@ async def main():
     logger.info("Starting bot...")
     await application.initialize()
     await application.start()
-    await application.updater.start_polling()
-    await application.updater.idle()
+    
+    try:
+        await application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            stop_signals=None  # غیرفعال کردن signal handling
+        )
+    except Exception as e:
+        logger.error(f"Error during bot execution: {e}")
+    finally:
+        logger.info("Stopping bot...")
+        await application.stop()
+        await application.shutdown()
+        logger.info("Bot stopped")
 
 if __name__ == "__main__":
     try:
